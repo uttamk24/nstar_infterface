@@ -1,0 +1,27 @@
+Start testing: Jun 17 17:46 IST
+----------------------------------------------------------
+7/7 Testing: sil_full_suite
+7/7 Test: sil_full_suite
+Command: "/home/dhruvaspace/NSTAR-TTC/build/test_sil" "/home/dhruvaspace/NSTAR-TTC/build/nstar_sim" "/home/dhruvaspace/NSTAR-TTC/build/nstar_app_sil"
+Directory: /home/dhruvaspace/NSTAR-TTC/build
+"sil_full_suite" start time: Jun 17 17:46 IST
+Output:
+----------------------------------------------------------
+/home/dhruvaspace/NSTAR-TTC/sil/test_sil.c:359:test_sil_fsm_startup_reaches_ready:PASS
+/home/dhruvaspace/NSTAR-TTC/sil/test_sil.c:360:test_sil_fsm_fpga_type_mismatch_drives_fault:PASS
+/home/dhruvaspace/NSTAR-TTC/sil/test_sil.c:361:test_sil_commands_register_value_reflected_in_identity_path:PASS
+/home/dhruvaspace/NSTAR-TTC/sil/test_sil.c:362:test_sil_rx_lock_sequence_delivers_frame:PASS
+/home/dhruvaspace/NSTAR-TTC/sil/test_sil.c:363:test_sil_fault_assertion_then_recovery:PASS
+
+-----------------------
+5 Tests 0 Failures 0 Ignored 
+OK
+<end of output>
+Test time =  33.57 sec
+----------------------------------------------------------
+Test Passed.
+"sil_full_suite" end time: Jun 17 17:46 IST
+"sil_full_suite" time elapsed: 00:00:33
+----------------------------------------------------------
+
+End testing: Jun 17 17:46 IST

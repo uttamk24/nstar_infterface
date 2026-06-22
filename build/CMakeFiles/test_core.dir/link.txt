@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/test_core.dir/tests/test_core.c.o -o test_core  libnstar_core.a libnstar_frame_crc_on.a libnstar_hal_mock.a libunity.a -lpthread -lm 

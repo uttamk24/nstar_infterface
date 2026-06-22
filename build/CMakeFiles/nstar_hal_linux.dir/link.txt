@@ -1,0 +1,2 @@
+/usr/bin/ar qc libnstar_hal_linux.a CMakeFiles/nstar_hal_linux.dir/hal/nstar_hal_linux.c.o
+/usr/bin/ranlib libnstar_hal_linux.a

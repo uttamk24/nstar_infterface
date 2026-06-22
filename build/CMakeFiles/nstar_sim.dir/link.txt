@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/nstar_sim.dir/sil/nstar_sim.c.o -o nstar_sim  libnstar_frame_crc_on.a -lutil 

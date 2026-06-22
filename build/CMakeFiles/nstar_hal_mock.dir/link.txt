@@ -1,0 +1,2 @@
+/usr/bin/ar qc libnstar_hal_mock.a CMakeFiles/nstar_hal_mock.dir/src/nstar_hal_mock.c.o
+/usr/bin/ranlib libnstar_hal_mock.a

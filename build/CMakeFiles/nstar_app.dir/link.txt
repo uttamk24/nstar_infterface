@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/nstar_app.dir/main/nstar_app.c.o -o nstar_app  libnstar_core.a libnstar_frame_crc_on.a libnstar_hal_linux.a -lpthread -lm 

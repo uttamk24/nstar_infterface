@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/test_tx.dir/tests/test_tx.c.o -o test_tx  libnstar_core.a libnstar_frame_crc_on.a libnstar_hal_mock.a libunity.a -lpthread -lm 

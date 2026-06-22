@@ -1,0 +1,2 @@
+/usr/bin/ar qc libnstar_frame_crc_on.a CMakeFiles/nstar_frame_crc_on.dir/src/nstar_frame.c.o
+/usr/bin/ranlib libnstar_frame_crc_on.a

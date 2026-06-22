@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/test_frame_crc_off.dir/tests/test_frame.c.o -o test_frame_crc_off  libnstar_frame_crc_off.a libnstar_hal_mock.a libunity.a 

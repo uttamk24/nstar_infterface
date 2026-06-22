@@ -1,0 +1,2 @@
+/usr/bin/ar qc libnstar_core.a CMakeFiles/nstar_core.dir/src/nstar_core.c.o
+/usr/bin/ranlib libnstar_core.a

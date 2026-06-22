@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/test_health_fault.dir/tests/test_health_fault.c.o -o test_health_fault  libnstar_core.a libnstar_frame_crc_on.a libnstar_hal_mock.a libunity.a -lpthread -lm 

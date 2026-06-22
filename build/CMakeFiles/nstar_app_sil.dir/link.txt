@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/nstar_app_sil.dir/sil/nstar_app_sil.c.o -o nstar_app_sil  libnstar_core.a libnstar_frame_crc_on.a libnstar_hal_dummy.a -lpthread -lm 
