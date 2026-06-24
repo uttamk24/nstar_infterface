@@ -13,19 +13,19 @@
  *      the PTY can't model, but the byte-level framing parameters are
  *      configured for real so the same termios setup code is exercised).
  *   2. Initialise GPIO line "fds" to the fixed integer values the dummy
- *      HAL's gpio_fd_to_filename() table expects.
- *   3. Call nstar_init() + nstar_startup_sequence(), exactly as a real
+ *      HAL's gpioFdToFilename() table expects.
+ *   3. Call nstarInit() + nstarStartupSequence(), exactly as a real
  *      application would.
- *   4. On every module_state transition, rx_state transition, fault,
+ *   4. On every moduleState transition, rxState transition, fault,
  *      frame reception, and TX completion, rewrite the SIL status file
- *      so the separate test_sil process can observe what happened.
+ *      so the separate testSil process can observe what happened.
  *   5. Stay running (so a SIL test can drive GPIO files and the
  *      simulator's control file over time) until told to exit via
  *      SIGTERM/SIGINT, or until an optional run-duration argument elapses.
  *
  * Since nstar_core.c has no built-in hook for "notify on every state
- * change", this file polls nstar_get_module_state() and
- * nstar_rx_get_state() in its own small monitor loop and diffs against
+ * change", this file polls nstarGetModuleState() and
+ * nstarRXGetState() in its own small monitor loop and diffs against
  * the last-seen values — this is allowed because these accessors are
  * part of the public API and are documented as thread-safe.
  */
@@ -50,25 +50,25 @@
 #define SIL_FD_GPIO_RESET_N      23
 #define SIL_FD_DATA_INTERFACE    11
 
-static volatile int g_running = 1;
-static sil_status_t g_status;
+static volatile int gRunning = 1;
+static silStatus_t gStatus;
 
-static size_t  g_total_bytes_received = 0;
-static size_t  g_frame_received_count = 0;
-static size_t  g_lock_acquired_count  = 0;
-static size_t  g_lock_lost_count      = 0;
-static size_t  g_fault_count          = 0;
-static char    g_last_fault[16]       = "NONE";
-static size_t  g_tx_complete_count    = 0;
-static size_t  g_last_tx_bytes        = 0;
-static int     g_last_tx_start_rc     = 1;   /* 1 = "not yet called" sentinel */
-static int     g_last_tx_write_rc     = 1;
-static int     g_last_tx_stop_rc      = 1;
+static size_t  gTotalBytesReceived = 0;
+static size_t  gFrameReceivedCount = 0;
+static size_t  gLockAcquiredCount  = 0;
+static size_t  gLockLostCount      = 0;
+static size_t  gFaultCount          = 0;
+static char    gLastFault[16]       = "NONE";
+static size_t  gTXCompleteCount    = 0;
+static size_t  gLastTXBytes        = 0;
+static int     gLastTXStartRC     = 1;   /* 1 = "not yet called" sentinel */
+static int     gLastTXWriteRC     = 1;
+static int     gLastTXStopRC      = 1;
 
 static void sighandler(int sig)
 {
     (void)sig;
-    g_running = 0;
+    gRunning = 0;
 }
 
 /* =========================================================================
@@ -78,51 +78,51 @@ static void sighandler(int sig)
  * =========================================================================
  */
 
-static void on_frame_received(const uint8_t *buf, size_t len)
+static void onFrameReceived(const uint8_t *buf, size_t len)
 {
     (void)buf;
-    g_frame_received_count++;
-    g_total_bytes_received += len;
+    gFrameReceivedCount++;
+    gTotalBytesReceived += len;
     fprintf(stderr, "[nstar_app_sil] frame received: %zu bytes\n", len);
 }
 
-static void on_tx_complete(size_t bytes_sent)
+static void onTXComplete(size_t bytesSent)
 {
-    g_tx_complete_count++;
-    g_last_tx_bytes = bytes_sent;
-    fprintf(stderr, "[nstar_app_sil] tx complete: %zu bytes\n", bytes_sent);
+    gTXCompleteCount++;
+    gLastTXBytes = bytesSent;
+    fprintf(stderr, "[nstar_app_sil] tx complete: %zu bytes\n", bytesSent);
 }
 
-static void on_fault(nstar_fault_source_t source)
+static void onFault(nstarFaultSource_t source)
 {
-    g_fault_count++;
+    gFaultCount++;
     switch (source) {
-        case NSTAR_FAULT_SEL:         snprintf(g_last_fault, sizeof(g_last_fault), "SEL"); break;
-        case NSTAR_FAULT_OVERCURRENT: snprintf(g_last_fault, sizeof(g_last_fault), "OVERCURRENT"); break;
-        case NSTAR_FAULT_TEMPERATURE: snprintf(g_last_fault, sizeof(g_last_fault), "TEMPERATURE"); break;
-        default:                      snprintf(g_last_fault, sizeof(g_last_fault), "UNKNOWN"); break;
+        case NSTAR_FAULT_SEL:         snprintf(gLastFault, sizeof(gLastFault), "SEL"); break;
+        case NSTAR_FAULT_OVERCURRENT: snprintf(gLastFault, sizeof(gLastFault), "OVERCURRENT"); break;
+        case NSTAR_FAULT_TEMPERATURE: snprintf(gLastFault, sizeof(gLastFault), "TEMPERATURE"); break;
+        default:                      snprintf(gLastFault, sizeof(gLastFault), "UNKNOWN"); break;
     }
-    fprintf(stderr, "[nstar_app_sil] fault: %s\n", g_last_fault);
+    fprintf(stderr, "[nstar_app_sil] fault: %s\n", gLastFault);
 }
 
-static void on_lock_acquired(void)
+static void onLockAcquired(void)
 {
-    g_lock_acquired_count++;
+    gLockAcquiredCount++;
     fprintf(stderr, "[nstar_app_sil] lock acquired\n");
 }
 
-static void on_lock_lost(void)
+static void onLockLost(void)
 {
-    g_lock_lost_count++;
+    gLockLostCount++;
     fprintf(stderr, "[nstar_app_sil] lock lost\n");
 }
 
-static const nstar_callbacks_t k_callbacks = {
-    .on_frame_received = on_frame_received,
-    .on_tx_complete    = on_tx_complete,
-    .on_fault          = on_fault,
-    .on_lock_acquired  = on_lock_acquired,
-    .on_lock_lost      = on_lock_lost,
+static const nstarCallbacks_t kCallbacks = {
+    .onFrameReceived = onFrameReceived,
+    .onTXComplete    = onTXComplete,
+    .onFault          = onFault,
+    .onLockAcquired  = onLockAcquired,
+    .onLockLost      = onLockLost,
 };
 
 /* =========================================================================
@@ -131,10 +131,10 @@ static const nstar_callbacks_t k_callbacks = {
  * =========================================================================
  */
 
-static void apply_app_control_commands(nstar_ctx_t *ctx)
+static void applyAppControlCommands(nstarCtx_t *ctx)
 {
     char path[512];
-    sil_path(path, sizeof(path), SIL_APP_CONTROL_FILE);
+    silPath(path, sizeof(path), SIL_APP_CONTROL_FILE);
 
     FILE *f = fopen(path, "r");
     if (!f) return;
@@ -149,8 +149,8 @@ static void apply_app_control_commands(nstar_ctx_t *ctx)
 
         if (strncmp(line, "TX_START=", 9) == 0) {
             long rate = strtol(line + 9, NULL, 16);
-            nstar_result_t rc = nstar_tx_start(ctx, (nstar_tx_rate_code_t)rate);
-            g_last_tx_start_rc = (int)rc;
+            nstarResult_t rc = nstarTXStart(ctx, (nstarTXRateCode_t)rate);
+            gLastTXStartRC = (int)rc;
             fprintf(stderr, "[nstar_app_sil] TX_START(rate=0x%lx) -> %d\n",
                     rate, rc);
         } else if (strncmp(line, "TX_WRITE=", 9) == 0) {
@@ -159,16 +159,16 @@ static void apply_app_control_commands(nstar_ctx_t *ctx)
                 uint8_t *buf = malloc((size_t)nbytes);
                 if (buf) {
                     for (long i = 0; i < nbytes; i++) buf[i] = (uint8_t)(i & 0xFF);
-                    nstar_result_t rc = nstar_tx_write(ctx, buf, (size_t)nbytes);
-                    g_last_tx_write_rc = (int)rc;
+                    nstarResult_t rc = nstarTXWrite(ctx, buf, (size_t)nbytes);
+                    gLastTXWriteRC = (int)rc;
                     fprintf(stderr, "[nstar_app_sil] TX_WRITE(%ld bytes) -> %d\n",
                             nbytes, rc);
                     free(buf);
                 }
             }
         } else if (strncmp(line, "TX_STOP", 7) == 0) {
-            nstar_result_t rc = nstar_tx_stop(ctx);
-            g_last_tx_stop_rc = (int)rc;
+            nstarResult_t rc = nstarTXStop(ctx);
+            gLastTXStopRC = (int)rc;
             fprintf(stderr, "[nstar_app_sil] TX_STOP -> %d\n", rc);
         }
     }
@@ -185,7 +185,7 @@ static void apply_app_control_commands(nstar_ctx_t *ctx)
  * =========================================================================
  */
 
-static const char *module_state_name(nstar_module_state_t s)
+static const char *moduleStateName(nstarModuleState_t s)
 {
     switch (s) {
         case NSTAR_MODULE_UNINIT:        return "UNINIT";
@@ -198,7 +198,7 @@ static const char *module_state_name(nstar_module_state_t s)
     }
 }
 
-static const char *rx_state_name(nstar_rx_state_t s)
+static const char *rxStateName(nstarRXState_t s)
 {
     switch (s) {
         case NSTAR_RX_IDLE:      return "IDLE";
@@ -209,30 +209,30 @@ static const char *rx_state_name(nstar_rx_state_t s)
     }
 }
 
-static void refresh_status(nstar_ctx_t *ctx)
+static void refreshStatus(nstarCtx_t *ctx)
 {
-    sil_status_init(&g_status);
-    sil_status_set(&g_status, "MODULE_STATE",
-                   module_state_name(nstar_get_module_state(ctx)));
-    sil_status_set(&g_status, "RX_STATE",
-                   rx_state_name(nstar_rx_get_state(ctx)));
-    sil_status_set_int(&g_status, "FRAME_RECEIVED_COUNT",
-                        (long)g_frame_received_count);
-    sil_status_set_int(&g_status, "TOTAL_BYTES_RECEIVED",
-                        (long)g_total_bytes_received);
-    sil_status_set_int(&g_status, "LOCK_ACQUIRED_COUNT",
-                        (long)g_lock_acquired_count);
-    sil_status_set_int(&g_status, "LOCK_LOST_COUNT",
-                        (long)g_lock_lost_count);
-    sil_status_set_int(&g_status, "FAULT_COUNT", (long)g_fault_count);
-    sil_status_set(&g_status, "LAST_FAULT", g_last_fault);
-    sil_status_set_int(&g_status, "TX_COMPLETE_COUNT",
-                        (long)g_tx_complete_count);
-    sil_status_set_int(&g_status, "LAST_TX_BYTES", (long)g_last_tx_bytes);
-    sil_status_set_int(&g_status, "LAST_TX_START_RC", g_last_tx_start_rc);
-    sil_status_set_int(&g_status, "LAST_TX_WRITE_RC", g_last_tx_write_rc);
-    sil_status_set_int(&g_status, "LAST_TX_STOP_RC", g_last_tx_stop_rc);
-    sil_status_write(&g_status);
+    silStatusInit(&gStatus);
+    silStatusSet(&gStatus, "MODULE_STATE",
+                   moduleStateName(nstarGetModuleState(ctx)));
+    silStatusSet(&gStatus, "RX_STATE",
+                   rxStateName(nstarRXGetState(ctx)));
+    silStatusSetInt(&gStatus, "FRAME_RECEIVED_COUNT",
+                        (long)gFrameReceivedCount);
+    silStatusSetInt(&gStatus, "TOTAL_BYTES_RECEIVED",
+                        (long)gTotalBytesReceived);
+    silStatusSetInt(&gStatus, "LOCK_ACQUIRED_COUNT",
+                        (long)gLockAcquiredCount);
+    silStatusSetInt(&gStatus, "LOCK_LOST_COUNT",
+                        (long)gLockLostCount);
+    silStatusSetInt(&gStatus, "FAULT_COUNT", (long)gFaultCount);
+    silStatusSet(&gStatus, "LAST_FAULT", gLastFault);
+    silStatusSetInt(&gStatus, "TX_COMPLETE_COUNT",
+                        (long)gTXCompleteCount);
+    silStatusSetInt(&gStatus, "LAST_TX_BYTES", (long)gLastTXBytes);
+    silStatusSetInt(&gStatus, "LAST_TX_START_RC", gLastTXStartRC);
+    silStatusSetInt(&gStatus, "LAST_TX_WRITE_RC", gLastTXWriteRC);
+    silStatusSetInt(&gStatus, "LAST_TX_STOP_RC", gLastTXStopRC);
+    silStatusWrite(&gStatus);
 }
 
 /* =========================================================================
@@ -240,42 +240,42 @@ static void refresh_status(nstar_ctx_t *ctx)
  * =========================================================================
  */
 
-static int wait_for_pty_link(char *slave_path_out, size_t out_len,
-                              int timeout_ms)
+static int waitForPTYLink(char *slavePathOut, size_t outLen,
+                              int timeoutMs)
 {
-    char link_path[512];
-    sil_path(link_path, sizeof(link_path), SIL_PTY_LINK_FILE);
+    char linkPath[512];
+    silPath(linkPath, sizeof(linkPath), SIL_PTY_LINK_FILE);
 
     struct timespec start, now;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (;;) {
-        FILE *f = fopen(link_path, "r");
+        FILE *f = fopen(linkPath, "r");
         if (f) {
             char buf[256] = {0};
             size_t n = fread(buf, 1, sizeof(buf) - 1, f);
             fclose(f);
             if (n > 0) {
-                snprintf(slave_path_out, out_len, "%s", buf);
+                snprintf(slavePathOut, outLen, "%s", buf);
                 return 0;
             }
         }
         clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 +
+        long elapsedMS = (now.tv_sec - start.tv_sec) * 1000 +
                           (now.tv_nsec - start.tv_nsec) / 1000000;
-        if (elapsed_ms >= timeout_ms) return -1;
+        if (elapsedMS >= timeoutMs) return -1;
 
         struct timespec d = { 0, 50 * 1000000L };
         nanosleep(&d, NULL);
     }
 }
 
-static int open_uart(const char *slave_path)
+static int openUART(const char *slavePath)
 {
-    int fd = open(slave_path, O_RDWR | O_NOCTTY);
+    int fd = open(slavePath, O_RDWR | O_NOCTTY);
     if (fd < 0) {
         fprintf(stderr, "[nstar_app_sil] open(%s) failed: %s\n",
-                slave_path, strerror(errno));
+                slavePath, strerror(errno));
         return -1;
     }
 
@@ -338,15 +338,15 @@ static int open_uart(const char *slave_path)
  * =========================================================================
  *
  * Ensures every GPIO file exists with a sane idle default before
- * nstar_init() spawns threads that immediately start polling them.
+ * nstarInit() spawns threads that immediately start polling them.
  * FAULT_N idles HIGH (active-low, no fault). LOCK_DETECT and DATA_VALID
  * idle LOW (no signal). RESET_N idles HIGH (not asserted).
  */
 
-static void write_gpio_default(const char *filename, int value)
+static void writeGPIODefault(const char *filename, int value)
 {
     char path[512], tmp[520];
-    sil_path(path, sizeof(path), filename);
+    silPath(path, sizeof(path), filename);
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
     FILE *f = fopen(tmp, "w");
     if (!f) return;
@@ -355,12 +355,12 @@ static void write_gpio_default(const char *filename, int value)
     rename(tmp, path);
 }
 
-static void init_gpio_defaults(void)
+static void initGPIODefaults(void)
 {
-    write_gpio_default(SIL_GPIO_LOCK_DETECT_FILE, 0);
-    write_gpio_default(SIL_GPIO_DATA_VALID_FILE,  0);
-    write_gpio_default(SIL_GPIO_FAULT_N_FILE,      1);
-    write_gpio_default(SIL_GPIO_RESET_N_FILE,      1);
+    writeGPIODefault(SIL_GPIO_LOCK_DETECT_FILE, 0);
+    writeGPIODefault(SIL_GPIO_DATA_VALID_FILE,  0);
+    writeGPIODefault(SIL_GPIO_FAULT_N_FILE,      1);
+    writeGPIODefault(SIL_GPIO_RESET_N_FILE,      1);
 }
 
 /* =========================================================================
@@ -369,7 +369,7 @@ static void init_gpio_defaults(void)
  *
  * Usage: nstar_app_sil [run_duration_seconds]
  *   If run_duration_seconds is given, the process exits automatically
- *   after that many seconds (used by test_sil.c so each scenario gets a
+ *   after that many seconds (used by testSil.c so each scenario gets a
  *   bounded-lifetime app process). If omitted, runs until SIGTERM/SIGINT.
  */
 int main(int argc, char **argv)
@@ -377,107 +377,107 @@ int main(int argc, char **argv)
     signal(SIGINT,  sighandler);
     signal(SIGTERM, sighandler);
 
-    int run_duration_s = 0;
-    if (argc > 1) run_duration_s = atoi(argv[1]);
+    int runDurationS = 0;
+    if (argc > 1) runDurationS = atoi(argv[1]);
 
-    init_gpio_defaults();
+    initGPIODefaults();
 
-    char slave_path[256];
+    char slavePath[256];
     fprintf(stderr, "[nstar_app_sil] waiting for simulator PTY link...\n");
-    if (wait_for_pty_link(slave_path, sizeof(slave_path), 5000) != 0) {
+    if (waitForPTYLink(slavePath, sizeof(slavePath), 5000) != 0) {
         fprintf(stderr, "[nstar_app_sil] timed out waiting for %s\n",
                 SIL_PTY_LINK_FILE);
         return 1;
     }
-    fprintf(stderr, "[nstar_app_sil] opening UART: %s\n", slave_path);
+    fprintf(stderr, "[nstar_app_sil] opening UART: %s\n", slavePath);
 
-    int uart_fd = open_uart(slave_path);
-    if (uart_fd < 0) return 1;
+    int uartFd = openUART(slavePath);
+    if (uartFd < 0) return 1;
 
-    nstar_config_t config = {
-        .uart_fd           = uart_fd,
-        .data_fd            = SIL_FD_DATA_INTERFACE,
-        .gpio_lock_detect   = SIL_FD_GPIO_LOCK_DETECT,
-        .gpio_data_valid    = SIL_FD_GPIO_DATA_VALID,
-        .gpio_fault_n       = SIL_FD_GPIO_FAULT_N,
-        .gpio_reset_n       = SIL_FD_GPIO_RESET_N,
+    nstarConfig_t config = {
+        .uartFd           = uartFd,
+        .dataFd            = SIL_FD_DATA_INTERFACE,
+        .gpioLockDetect   = SIL_FD_GPIO_LOCK_DETECT,
+        .gpioDataValid    = SIL_FD_GPIO_DATA_VALID,
+        .gpioFaultN       = SIL_FD_GPIO_FAULT_N,
+        .gpioResetN       = SIL_FD_GPIO_RESET_N,
     };
 
-    nstar_ctx_t *ctx = NULL;
-    nstar_result_t rc = nstar_init(&config, &k_callbacks, &ctx);
+    nstarCtx_t *ctx = NULL;
+    nstarResult_t rc = nstarInit(&config, &kCallbacks, &ctx);
     if (rc != NSTAR_OK) {
-        fprintf(stderr, "[nstar_app_sil] nstar_init failed: %d\n", rc);
-        close(uart_fd);
+        fprintf(stderr, "[nstar_app_sil] nstarInit failed: %d\n", rc);
+        close(uartFd);
         return 1;
     }
-    refresh_status(ctx);
+    refreshStatus(ctx);
 
     fprintf(stderr, "[nstar_app_sil] running startup_sequence...\n");
-    rc = nstar_startup_sequence(ctx);
+    rc = nstarStartupSequence(ctx);
     fprintf(stderr, "[nstar_app_sil] startup_sequence -> %d (state=%s)\n",
-            rc, module_state_name(nstar_get_module_state(ctx)));
-    refresh_status(ctx);
+            rc, moduleStateName(nstarGetModuleState(ctx)));
+    refreshStatus(ctx);
 
     /* Monitor loop: poll module/RX state and counters, refresh the status
      * file whenever anything observable changes. 50ms cadence keeps the
      * SIL test suite's polling responsive without busy-looping. */
-    nstar_module_state_t last_module_state = nstar_get_module_state(ctx);
-    nstar_rx_state_t      last_rx_state     = nstar_rx_get_state(ctx);
-    size_t last_frame_count = g_frame_received_count;
-    size_t last_fault_count = g_fault_count;
-    size_t last_tx_count    = g_tx_complete_count;
-    size_t last_lock_acq    = g_lock_acquired_count;
-    size_t last_lock_lost   = g_lock_lost_count;
+    nstarModuleState_t lastModuleState = nstarGetModuleState(ctx);
+    nstarRXState_t      lastRXState     = nstarRXGetState(ctx);
+    size_t lastFrameCount = gFrameReceivedCount;
+    size_t lastFaultCount = gFaultCount;
+    size_t lastTXCount    = gTXCompleteCount;
+    size_t lastLockAcq    = gLockAcquiredCount;
+    size_t lastLockLost   = gLockLostCount;
 
-    struct timespec run_start;
-    clock_gettime(CLOCK_MONOTONIC, &run_start);
+    struct timespec runStart;
+    clock_gettime(CLOCK_MONOTONIC, &runStart);
 
-    while (g_running) {
+    while (gRunning) {
         struct timespec d = { 0, 50 * 1000000L };
         nanosleep(&d, NULL);
 
-        int rc_before_start = g_last_tx_start_rc;
-        int rc_before_write = g_last_tx_write_rc;
-        int rc_before_stop  = g_last_tx_stop_rc;
+        int rcBeforeStart = gLastTXStartRC;
+        int rcBeforeWrite = gLastTXWriteRC;
+        int rcBeforeStop  = gLastTXStopRC;
 
-        apply_app_control_commands(ctx);
+        applyAppControlCommands(ctx);
 
-        nstar_module_state_t cur_module_state = nstar_get_module_state(ctx);
-        nstar_rx_state_t      cur_rx_state     = nstar_rx_get_state(ctx);
+        nstarModuleState_t curModuleState = nstarGetModuleState(ctx);
+        nstarRXState_t      curRXState     = nstarRXGetState(ctx);
 
-        int tx_rc_changed = (g_last_tx_start_rc != rc_before_start) ||
-                            (g_last_tx_write_rc != rc_before_write) ||
-                            (g_last_tx_stop_rc  != rc_before_stop);
+        int txRCChanged = (gLastTXStartRC != rcBeforeStart) ||
+                            (gLastTXWriteRC != rcBeforeWrite) ||
+                            (gLastTXStopRC  != rcBeforeStop);
 
-        if (cur_module_state != last_module_state ||
-            cur_rx_state     != last_rx_state     ||
-            g_frame_received_count != last_frame_count ||
-            g_fault_count           != last_fault_count ||
-            g_tx_complete_count     != last_tx_count ||
-            g_lock_acquired_count   != last_lock_acq ||
-            g_lock_lost_count       != last_lock_lost ||
-            tx_rc_changed) {
+        if (curModuleState != lastModuleState ||
+            curRXState     != lastRXState     ||
+            gFrameReceivedCount != lastFrameCount ||
+            gFaultCount           != lastFaultCount ||
+            gTXCompleteCount     != lastTXCount ||
+            gLockAcquiredCount   != lastLockAcq ||
+            gLockLostCount       != lastLockLost ||
+            txRCChanged) {
 
-            refresh_status(ctx);
-            last_module_state = cur_module_state;
-            last_rx_state      = cur_rx_state;
-            last_frame_count   = g_frame_received_count;
-            last_fault_count   = g_fault_count;
-            last_tx_count      = g_tx_complete_count;
-            last_lock_acq       = g_lock_acquired_count;
-            last_lock_lost       = g_lock_lost_count;
+            refreshStatus(ctx);
+            lastModuleState = curModuleState;
+            lastRXState      = curRXState;
+            lastFrameCount   = gFrameReceivedCount;
+            lastFaultCount   = gFaultCount;
+            lastTXCount      = gTXCompleteCount;
+            lastLockAcq       = gLockAcquiredCount;
+            lastLockLost       = gLockLostCount;
         }
 
-        if (run_duration_s > 0) {
+        if (runDurationS > 0) {
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
-            long elapsed_s = now.tv_sec - run_start.tv_sec;
-            if (elapsed_s >= run_duration_s) break;
+            long elapsedS = now.tv_sec - runStart.tv_sec;
+            if (elapsedS >= runDurationS) break;
         }
     }
 
     fprintf(stderr, "[nstar_app_sil] shutting down\n");
-    nstar_deinit(ctx);
-    close(uart_fd);
+    nstarDeinit(ctx);
+    close(uartFd);
     return 0;
 }

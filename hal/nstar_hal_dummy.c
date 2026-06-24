@@ -15,7 +15,7 @@
  *   - GPIO:  plain text files ("0" or "1") polled with a short sleep
  *            interval. The SIL test suite (or a human) writes these files
  *            directly to simulate LOCK_DETECT, DATA_VALID, FAULT_N edges.
- *            RESET_N is the one GPIO OUTPUT — nstar_hal_gpio_write()
+ *            RESET_N is the one GPIO OUTPUT — nstarHALGPIOWrite()
  *            writes its value to a file the simulator can poll.
  *
  *   - Data:  real file I/O. TX writes append to a file the SIL test suite
@@ -30,11 +30,11 @@
  * File descriptors passed in by the caller (the `fd` parameter on every
  * HAL function) are NOT used to select which file/GPIO line to touch —
  * instead, each function call resolves its target path from sil_common.h
- * leaf names. This means the `nstar_config_t` fd fields are still opened
+ * leaf names. This means the `nstarConfig_t` fd fields are still opened
  * by the application (nstar_app_sil.c) for symmetry with the real HAL's
  * calling convention, but the dummy HAL itself works off fixed SIL paths.
  * This keeps nstar_core.c's calling code completely unmodified — it still
- * just passes ctx->config.uart_fd etc. around as opaque integers.
+ * just passes ctx->config.uartFd etc. around as opaque integers.
  */
 
 #define _DEFAULT_SOURCE
@@ -54,7 +54,7 @@
  * =========================================================================
  */
 
-ssize_t nstar_hal_uart_write(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarHALUARTWrite(int fd, const uint8_t *buf, size_t len)
 {
     size_t written = 0;
     while (written < len) {
@@ -68,16 +68,16 @@ ssize_t nstar_hal_uart_write(int fd, const uint8_t *buf, size_t len)
     return (ssize_t)written;
 }
 
-ssize_t nstar_hal_uart_read(int fd, uint8_t *buf, size_t len,
-                             uint32_t timeout_ms)
+ssize_t nstarHALUARTRead(int fd, uint8_t *buf, size_t len,
+                             uint32_t timeoutMs)
 {
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(fd, &rfds);
 
     struct timeval tv;
-    tv.tv_sec  = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    tv.tv_sec  = timeoutMs / 1000;
+    tv.tv_usec = (timeoutMs % 1000) * 1000;
 
     int sel = select(fd + 1, &rfds, NULL, NULL, &tv);
     if (sel < 0) {
@@ -99,15 +99,15 @@ ssize_t nstar_hal_uart_read(int fd, uint8_t *buf, size_t len,
  * =========================================================================
  *
  * Each GPIO "line" in the real config struct is just an integer fd field
- * (gpio_lock_detect, gpio_data_valid, gpio_fault_n, gpio_reset_n) carried
+ * (gpioLockDetect, gpioDataValid, gpioFaultN, gpioResetN) carried
  * over unchanged from the real HAL's calling convention. The dummy HAL
  * maps each fd value to a fixed SIL file path via a small lookup table,
  * since the SIL harness needs stable, human-writable file names rather
  * than opaque fds.
  *
  * nstar_app_sil.c assigns these same fd values (see sil_common.h-adjacent
- * constants below) when it builds the nstar_config_t it passes to
- * nstar_init(), so the mapping here and the fd values there must agree.
+ * constants below) when it builds the nstarConfig_t it passes to
+ * nstarInit(), so the mapping here and the fd values there must agree.
  */
 
 #define SIL_FD_GPIO_LOCK_DETECT  20
@@ -115,7 +115,7 @@ ssize_t nstar_hal_uart_read(int fd, uint8_t *buf, size_t len,
 #define SIL_FD_GPIO_FAULT_N      22
 #define SIL_FD_GPIO_RESET_N      23
 
-static const char *gpio_fd_to_filename(int fd)
+static const char *gpioFdToFilename(int fd)
 {
     switch (fd) {
         case SIL_FD_GPIO_LOCK_DETECT: return SIL_GPIO_LOCK_DETECT_FILE;
@@ -127,10 +127,10 @@ static const char *gpio_fd_to_filename(int fd)
 }
 
 /** Read a GPIO file's current value (0 or 1). Returns -1 on error. */
-static int gpio_file_read_value(const char *filename)
+static int gpioFileReadValue(const char *filename)
 {
     char path[512];
-    sil_path(path, sizeof(path), filename);
+    silPath(path, sizeof(path), filename);
 
     FILE *f = fopen(path, "r");
     if (!f) return -1;
@@ -145,10 +145,10 @@ static int gpio_file_read_value(const char *filename)
 }
 
 /** Write a GPIO file's value (0 or 1), atomically via temp+rename. */
-static int gpio_file_write_value(const char *filename, int value)
+static int gpioFileWriteValue(const char *filename, int value)
 {
     char path[512], tmp[520];
-    sil_path(path, sizeof(path), filename);
+    silPath(path, sizeof(path), filename);
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
 
     FILE *f = fopen(tmp, "w");
@@ -158,93 +158,93 @@ static int gpio_file_write_value(const char *filename, int value)
     return rename(tmp, path);
 }
 
-int nstar_hal_gpio_read(int fd)
+int nstarHALGPIORead(int fd)
 {
-    const char *filename = gpio_fd_to_filename(fd);
+    const char *filename = gpioFdToFilename(fd);
     if (!filename) return -1;
-    return gpio_file_read_value(filename);
+    return gpioFileReadValue(filename);
 }
 
-nstar_result_t nstar_hal_gpio_write(int fd, int value)
+nstarResult_t nstarHALGPIOWrite(int fd, int value)
 {
-    const char *filename = gpio_fd_to_filename(fd);
+    const char *filename = gpioFdToFilename(fd);
     if (!filename) return NSTAR_ERR_HAL;
-    if (gpio_file_write_value(filename, value) != 0) return NSTAR_ERR_HAL;
+    if (gpioFileWriteValue(filename, value) != 0) return NSTAR_ERR_HAL;
     return NSTAR_OK;
 }
 
 /**
  * Poll the GPIO file every 20ms looking for the requested edge, up to
- * timeout_ms. An edge is detected by comparing the value seen on this
+ * timeoutMs. An edge is detected by comparing the value seen on this
  * call to the value seen on the previous call for the SAME fd — exactly
  * like the mock, each fd tracks its own last-known value across calls.
  */
 #define SIL_GPIO_MAX_LINES   4
 static struct {
     int fd;
-    int last_value;
-    int has_last;
-} g_gpio_last[SIL_GPIO_MAX_LINES];
+    int lastValue;
+    int hasLast;
+} gGPIOLast[SIL_GPIO_MAX_LINES];
 
-static int *gpio_last_value_slot(int fd, int *has_last_out)
+static int *gpioLastValueSlot(int fd, int *hasLastOut)
 {
     for (int i = 0; i < SIL_GPIO_MAX_LINES; i++) {
-        if (g_gpio_last[i].has_last && g_gpio_last[i].fd == fd) {
-            *has_last_out = 1;
-            return &g_gpio_last[i].last_value;
+        if (gGPIOLast[i].hasLast && gGPIOLast[i].fd == fd) {
+            *hasLastOut = 1;
+            return &gGPIOLast[i].lastValue;
         }
     }
     for (int i = 0; i < SIL_GPIO_MAX_LINES; i++) {
-        if (!g_gpio_last[i].has_last) {
-            g_gpio_last[i].fd = fd;
-            g_gpio_last[i].has_last = 1;
-            g_gpio_last[i].last_value = -1;
-            *has_last_out = 0;
-            return &g_gpio_last[i].last_value;
+        if (!gGPIOLast[i].hasLast) {
+            gGPIOLast[i].fd = fd;
+            gGPIOLast[i].hasLast = 1;
+            gGPIOLast[i].lastValue = -1;
+            *hasLastOut = 0;
+            return &gGPIOLast[i].lastValue;
         }
     }
     /* Table full — fall back to no history (treat every read as a change) */
-    *has_last_out = 0;
+    *hasLastOut = 0;
     return NULL;
 }
 
-nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
-                                         uint32_t timeout_ms)
+nstarResult_t nstarHALGPIOWaitEdge(int fd, nstarGPIOEdge_t edge,
+                                         uint32_t timeoutMs)
 {
-    const char *filename = gpio_fd_to_filename(fd);
+    const char *filename = gpioFdToFilename(fd);
     if (!filename) return NSTAR_ERR_HAL;
 
-    int has_last = 0;
-    int *last_slot = gpio_last_value_slot(fd, &has_last);
+    int hasLast = 0;
+    int *lastSlot = gpioLastValueSlot(fd, &hasLast);
 
     struct timespec start, now;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    int prev = has_last && last_slot ? *last_slot : gpio_file_read_value(filename);
+    int prev = hasLast && lastSlot ? *lastSlot : gpioFileReadValue(filename);
 
     for (;;) {
-        int cur = gpio_file_read_value(filename);
+        int cur = gpioFileReadValue(filename);
         if (cur >= 0) {
             int rising  = (prev == 0 && cur == 1);
             int falling = (prev == 1 && cur == 0);
             if ((edge == NSTAR_GPIO_EDGE_RISING  && rising) ||
                 (edge == NSTAR_GPIO_EDGE_FALLING && falling)) {
-                if (last_slot) *last_slot = cur;
+                if (lastSlot) *lastSlot = cur;
                 return NSTAR_OK;
             }
             prev = cur;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 +
+        long elapsedMS = (now.tv_sec - start.tv_sec) * 1000 +
                           (now.tv_nsec - start.tv_nsec) / 1000000;
-        if (elapsed_ms >= (long)timeout_ms) {
-            if (last_slot && cur >= 0) *last_slot = cur;
+        if (elapsedMS >= (long)timeoutMs) {
+            if (lastSlot && cur >= 0) *lastSlot = cur;
             return NSTAR_ERR_TIMEOUT;
         }
 
-        struct timespec poll_delay = { 0, 20 * 1000000L };  /* 20 ms */
-        nanosleep(&poll_delay, NULL);
+        struct timespec pollDelay = { 0, 20 * 1000000L };  /* 20 ms */
+        nanosleep(&pollDelay, NULL);
     }
 }
 
@@ -253,8 +253,8 @@ nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
  * =========================================================================
  *
  * TX: every call appends to SIL_DATA_TX_FILE. The SIL test suite reads
- * this file after a TX session to verify exactly what nstar_tx_write()
- * sent, the same way nstar_mock_data_get_written() works for unit tests
+ * this file after a TX session to verify exactly what nstarTXWrite()
+ * sent, the same way nstarMockDataGetWritten() works for unit tests
  * but observable from a separate process.
  *
  * RX: every call reads the next unread bytes from SIL_DATA_RX_FILE,
@@ -264,11 +264,11 @@ nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
  * sequence via the GPIO files.
  */
 
-ssize_t nstar_hal_data_write(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarHALDataWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd;
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_TX_FILE);
+    silPath(path, sizeof(path), SIL_DATA_TX_FILE);
 
     FILE *f = fopen(path, "ab");
     if (!f) return -1;
@@ -277,33 +277,33 @@ ssize_t nstar_hal_data_write(int fd, const uint8_t *buf, size_t len)
     return (ssize_t)n;
 }
 
-static long g_data_rx_offset = 0;
+static long gDataRXOffset = 0;
 
-ssize_t nstar_hal_data_read(int fd, uint8_t *buf, size_t len)
+ssize_t nstarHALDataRead(int fd, uint8_t *buf, size_t len)
 {
     (void)fd;
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_RX_FILE);
+    silPath(path, sizeof(path), SIL_DATA_RX_FILE);
 
     FILE *f = fopen(path, "rb");
     if (!f) return 0;   /* file doesn't exist yet — treat as no data */
 
-    if (fseek(f, g_data_rx_offset, SEEK_SET) != 0) {
+    if (fseek(f, gDataRXOffset, SEEK_SET) != 0) {
         fclose(f);
         return 0;
     }
     size_t n = fread(buf, 1, len, f);
     fclose(f);
 
-    g_data_rx_offset += (long)n;
+    gDataRXOffset += (long)n;
     return (ssize_t)n;
 }
 
-nstar_result_t nstar_hal_data_clock_start(int fd)
+nstarResult_t nstarHALDataClockStart(int fd)
 {
     (void)fd;
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_CLOCK_FILE);
+    silPath(path, sizeof(path), SIL_DATA_CLOCK_FILE);
     FILE *f = fopen(path, "w");
     if (!f) return NSTAR_ERR_HAL;
     fprintf(f, "1");
@@ -311,11 +311,11 @@ nstar_result_t nstar_hal_data_clock_start(int fd)
     return NSTAR_OK;
 }
 
-nstar_result_t nstar_hal_data_clock_stop(int fd)
+nstarResult_t nstarHALDataClockStop(int fd)
 {
     (void)fd;
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_CLOCK_FILE);
+    silPath(path, sizeof(path), SIL_DATA_CLOCK_FILE);
     FILE *f = fopen(path, "w");
     if (!f) return NSTAR_ERR_HAL;
     fprintf(f, "0");
@@ -328,7 +328,7 @@ nstar_result_t nstar_hal_data_clock_stop(int fd)
  * =========================================================================
  */
 
-void nstar_hal_sleep_ms(uint32_t ms)
+void nstarHALSleepMS(uint32_t ms)
 {
     struct timespec ts;
     ts.tv_sec  = ms / 1000;
@@ -336,7 +336,7 @@ void nstar_hal_sleep_ms(uint32_t ms)
     nanosleep(&ts, NULL);
 }
 
-uint64_t nstar_hal_timestamp_ms(void)
+uint64_t nstarHALTimestampMS(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);

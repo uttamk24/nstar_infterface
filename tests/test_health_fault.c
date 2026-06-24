@@ -1,16 +1,16 @@
 /**
- * @file  test_health_fault.c
+ * @file  testHealthFault.c
  * @brief Stage 5 unit tests — health monitoring and fault handling.
  *
  * Tests cover:
- *   - nstar_health_read() register decode and temperature formula
- *   - health_thread_func(): thermal warning fires on_fault(TEMPERATURE)
+ *   - nstarHealthRead() register decode and temperature formula
+ *   - healthThreadFunc(): thermal warning fires onFault(TEMPERATURE)
  *     and stops TX
- *   - fault_thread_func(): FAULT_N assertion triggers TX stop,
- *     on_fault(SEL) callback, and startup_sequence() re-run
+ *   - faultThreadFunc(): FAULT_N assertion triggers TX stop,
+ *     onFault(SEL) callback, and startup_sequence() re-run
  *   - RESET_N assertion on unrecovered fault
  *
- * Uses the same cb_sync_t pattern as test_rx.c for thread coordination.
+ * Uses the same cbSync_t pattern as testRx.c for thread coordination.
  */
 
 #include "unity/unity.h"
@@ -23,7 +23,7 @@
 #include <unistd.h>
 
 /* =========================================================================
- * Sync helpers (same pattern as test_rx.c)
+ * Sync helpers (same pattern as testRx.c)
  * =========================================================================
  */
 
@@ -31,53 +31,53 @@ typedef struct {
     pthread_mutex_t      mu;
     pthread_cond_t       cv;
     int                  fired;
-    nstar_fault_source_t fault_source;
-    int                  fault_count;
-    size_t               tx_complete_bytes;
-    int                  tx_complete_fired;
-} cb_sync_t;
+    nstarFaultSource_t faultSource;
+    int                  faultCount;
+    size_t               txCompleteBytes;
+    int                  txCompleteFired;
+} cbSync_t;
 
-static cb_sync_t g_sync;
+static cbSync_t gSync;
 
-static void sync_init(void)
+static void syncInit(void)
 {
-    pthread_mutex_init(&g_sync.mu, NULL);
-    pthread_cond_init(&g_sync.cv, NULL);
-    g_sync.fired             = 0;
-    g_sync.fault_count       = 0;
-    g_sync.tx_complete_fired = 0;
-    g_sync.tx_complete_bytes = 0;
+    pthread_mutex_init(&gSync.mu, NULL);
+    pthread_cond_init(&gSync.cv, NULL);
+    gSync.fired             = 0;
+    gSync.faultCount       = 0;
+    gSync.txCompleteFired = 0;
+    gSync.txCompleteBytes = 0;
 }
 
-static void sync_destroy(void)
+static void syncDestroy(void)
 {
-    pthread_mutex_destroy(&g_sync.mu);
-    pthread_cond_destroy(&g_sync.cv);
+    pthread_mutex_destroy(&gSync.mu);
+    pthread_cond_destroy(&gSync.cv);
 }
 
-static int sync_wait(int timeout_ms)
+static int syncWait(int timeoutMs)
 {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec  += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000L;
+    ts.tv_sec  += timeoutMs / 1000;
+    ts.tv_nsec += (timeoutMs % 1000) * 1000000L;
     if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
 
-    pthread_mutex_lock(&g_sync.mu);
+    pthread_mutex_lock(&gSync.mu);
     int rc = 0;
-    while (!g_sync.fired && rc == 0)
-        rc = pthread_cond_timedwait(&g_sync.cv, &g_sync.mu, &ts);
-    int result = g_sync.fired;
-    pthread_mutex_unlock(&g_sync.mu);
+    while (!gSync.fired && rc == 0)
+        rc = pthread_cond_timedwait(&gSync.cv, &gSync.mu, &ts);
+    int result = gSync.fired;
+    pthread_mutex_unlock(&gSync.mu);
     return result;
 }
 
-static void sync_signal(void)
+static void syncSignal(void)
 {
-    pthread_mutex_lock(&g_sync.mu);
-    g_sync.fired = 1;
-    pthread_cond_signal(&g_sync.cv);
-    pthread_mutex_unlock(&g_sync.mu);
+    pthread_mutex_lock(&gSync.mu);
+    gSync.fired = 1;
+    pthread_cond_signal(&gSync.cv);
+    pthread_mutex_unlock(&gSync.mu);
 }
 
 /* =========================================================================
@@ -85,31 +85,31 @@ static void sync_signal(void)
  * =========================================================================
  */
 
-static void on_frame_received(const uint8_t *b, size_t l) { (void)b;(void)l; }
+static void onFrameReceived(const uint8_t *b, size_t l) { (void)b;(void)l; }
 
-static void on_tx_complete(size_t bytes)
+static void onTXComplete(size_t bytes)
 {
-    g_sync.tx_complete_fired = 1;
-    g_sync.tx_complete_bytes = bytes;
-    sync_signal();
+    gSync.txCompleteFired = 1;
+    gSync.txCompleteBytes = bytes;
+    syncSignal();
 }
 
-static void on_fault(nstar_fault_source_t src)
+static void onFault(nstarFaultSource_t src)
 {
-    g_sync.fault_source = src;
-    g_sync.fault_count++;
-    sync_signal();
+    gSync.faultSource = src;
+    gSync.faultCount++;
+    syncSignal();
 }
 
-static void on_lock_acquired(void) {}
-static void on_lock_lost(void)     {}
+static void onLockAcquired(void) {}
+static void onLockLost(void)     {}
 
-static const nstar_callbacks_t k_cb = {
-    .on_frame_received = on_frame_received,
-    .on_tx_complete    = on_tx_complete,
-    .on_fault          = on_fault,
-    .on_lock_acquired  = on_lock_acquired,
-    .on_lock_lost      = on_lock_lost,
+static const nstarCallbacks_t kCb = {
+    .onFrameReceived = onFrameReceived,
+    .onTXComplete    = onTXComplete,
+    .onFault          = onFault,
+    .onLockAcquired  = onLockAcquired,
+    .onLockLost      = onLockLost,
 };
 
 /* =========================================================================
@@ -124,26 +124,26 @@ static const nstar_callbacks_t k_cb = {
 #define FD_FN     22
 #define FD_RST    23
 
-static const nstar_config_t k_cfg = {
-    .uart_fd          = FD_UART,
-    .data_fd          = FD_DATA,
-    .gpio_lock_detect = FD_LD,
-    .gpio_data_valid  = FD_DV,
-    .gpio_fault_n     = FD_FN,
-    .gpio_reset_n     = FD_RST,
+static const nstarConfig_t kCfg = {
+    .uartFd          = FD_UART,
+    .dataFd          = FD_DATA,
+    .gpioLockDetect = FD_LD,
+    .gpioDataValid  = FD_DV,
+    .gpioFaultN     = FD_FN,
+    .gpioResetN     = FD_RST,
 };
 
-static nstar_ctx_t *g_ctx = NULL;
+static nstarCtx_t *gCtx = NULL;
 
 static void qr(const char *s)
 {
-    nstar_mock_uart_queue_response((const uint8_t *)s, strlen(s));
+    nstarMockUARTQueueResponse((const uint8_t *)s, strlen(s));
 }
 
 /* Queue startup sequence UART responses (V, R 0x06, W 0x10 — the
  * redundant R 0x08/R 0x09 reads were removed from nstar_core.c since
  * FPGA_OPTION is already in the V response). */
-static void queue_startup_responses(void)
+static void queueStartupResponses(void)
 {
     qr("<V12:010018230042620307:F832>");
     qr("<R02:62:7D57>");
@@ -151,7 +151,7 @@ static void queue_startup_responses(void)
 }
 
 /* Queue TX start responses */
-static void queue_tx_start(void)
+static void queueTXStart(void)
 {
     qr("<A02:00:466C>");   /* W 0x22 rate */
     qr("<R02:10:9EA5>");   /* R 0x40 clock detected */
@@ -159,51 +159,51 @@ static void queue_tx_start(void)
 }
 
 /* Queue TX stop response */
-static void queue_tx_stop(void)
+static void queueTXStop(void)
 {
     qr("<A02:00:466C>");   /* W 0x40=0x00 standby */
 }
 
 void setUp(void)
 {
-    nstar_mock_reset();
-    sync_init();
-    nstar_mock_gpio_set_value(FD_FN, 1);   /* FAULT_N idle = HIGH */
-    nstar_mock_gpio_set_value(FD_DV, 0);
-    nstar_result_t rc = nstar_init(&k_cfg, &k_cb, &g_ctx);
+    nstarMockReset();
+    syncInit();
+    nstarMockGPIOSetValue(FD_FN, 1);   /* FAULT_N idle = HIGH */
+    nstarMockGPIOSetValue(FD_DV, 0);
+    nstarResult_t rc = nstarInit(&kCfg, &kCb, &gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
 
     /*
-     * nstar_init() leaves the module in STARTING, not READY.
-     * nstar_tx_start() requires READY. Run startup_sequence() here
+     * nstarInit() leaves the module in STARTING, not READY.
+     * nstarTXStart() requires READY. Run startup_sequence() here
      * so all tests start from READY, matching the real init flow.
      */
-    queue_startup_responses();
-    rc = nstar_startup_sequence(g_ctx);
+    queueStartupResponses();
+    rc = nstarStartupSequence(gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
-    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, nstar_get_module_state(g_ctx));
+    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, nstarGetModuleState(gCtx));
 }
 
 void tearDown(void)
 {
-    if (g_ctx) { nstar_deinit(g_ctx); g_ctx = NULL; }
-    sync_destroy();
+    if (gCtx) { nstarDeinit(gCtx); gCtx = NULL; }
+    syncDestroy();
 }
 
 /* =========================================================================
- * nstar_health_read tests
+ * nstarHealthRead tests
  * =========================================================================
  */
 
-void test_health_read_null_ctx_returns_param_error(void)
+void testHealthReadNullCtxReturnsParamError(void)
 {
-    nstar_health_t h;
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstar_health_read(NULL, &h));
+    nstarHealth_t h;
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarHealthRead(NULL, &h));
 }
 
-void test_health_read_null_out_returns_param_error(void)
+void testHealthReadNullOutReturnsParamError(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstar_health_read(g_ctx, NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarHealthRead(gCtx, NULL));
 }
 
 /**
@@ -211,7 +211,7 @@ void test_health_read_null_out_returns_param_error(void)
  * PA T = 0.06105 × 1440 − 50 = 37.9 °C
  * BB T = 0.06105 × 1200 − 50 = 23.3 °C
  */
-void test_health_read_decodes_temperatures(void)
+void testHealthReadDecodesTemperatures(void)
 {
     /* PA: 0x05, 0xA0 */
     qr("<R02:05:5660>");  /* PA MSB */
@@ -221,48 +221,48 @@ void test_health_read_decodes_temperatures(void)
     qr("<R02:B0:1FFD>");  /* BB LSB */
 
     /* FAULT_N = HIGH (no fault) */
-    nstar_mock_gpio_set_value(FD_FN, 1);
+    nstarMockGPIOSetValue(FD_FN, 1);
 
-    nstar_health_t h;
+    nstarHealth_t h;
     memset(&h, 0, sizeof(h));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_health_read(g_ctx, &h));
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarHealthRead(gCtx, &h));
 
-    TEST_ASSERT_EQUAL_UINT16(1440, h.pa_adc_raw);
-    TEST_ASSERT_EQUAL_UINT16(1200, h.bb_adc_raw);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 37.9f, h.pa_temp_celsius);
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 23.3f, h.bb_temp_celsius);
-    TEST_ASSERT_FALSE(h.fault_active);
+    TEST_ASSERT_EQUAL_UINT16(1440, h.paAdcRaw);
+    TEST_ASSERT_EQUAL_UINT16(1200, h.bbAdcRaw);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 37.9f, h.paTempCelsius);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 23.3f, h.bbTempCelsius);
+    TEST_ASSERT_FALSE(h.faultActive);
 }
 
 /**
- * FAULT_N = LOW (fault asserted) → health.fault_active = true.
+ * FAULT_N = LOW (fault asserted) → health.faultActive = true.
  */
-void test_health_read_fault_active_when_fault_n_low(void)
+void testHealthReadFaultActiveWhenFaultNLow(void)
 {
     qr("<R02:05:5660>"); qr("<R02:A0:46AD>");
     qr("<R02:04:6551>"); qr("<R02:B0:1FFD>");
 
-    nstar_mock_gpio_set_value(FD_FN, 0);  /* FAULT_N LOW = fault */
+    nstarMockGPIOSetValue(FD_FN, 0);  /* FAULT_N LOW = fault */
 
-    nstar_health_t h;
+    nstarHealth_t h;
     memset(&h, 0, sizeof(h));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_health_read(g_ctx, &h));
-    TEST_ASSERT_TRUE(h.fault_active);
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarHealthRead(gCtx, &h));
+    TEST_ASSERT_TRUE(h.faultActive);
 }
 
 /**
  * Temperature formula boundary: raw = 0 → T = −50 °C.
  */
-void test_health_read_temperature_formula_zero_raw(void)
+void testHealthReadTemperatureFormulaZeroRaw(void)
 {
     qr("<R02:00:A995>"); qr("<R02:00:A995>");  /* PA = 0 */
     qr("<R02:00:A995>"); qr("<R02:00:A995>");  /* BB = 0 */
-    nstar_mock_gpio_set_value(FD_FN, 1);
+    nstarMockGPIOSetValue(FD_FN, 1);
 
-    nstar_health_t h;
+    nstarHealth_t h;
     memset(&h, 0, sizeof(h));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_health_read(g_ctx, &h));
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, -50.0f, h.pa_temp_celsius);
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarHealthRead(gCtx, &h));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, -50.0f, h.paTempCelsius);
 }
 
 /* =========================================================================
@@ -271,28 +271,28 @@ void test_health_read_temperature_formula_zero_raw(void)
  */
 
 /**
- * PA temperature above soft limit → health thread fires on_fault(TEMPERATURE).
+ * PA temperature above soft limit → health thread fires onFault(TEMPERATURE).
  *
  * The health thread sleeps NSTAR_HEALTH_POLL_INTERVAL_MS between polls.
  * We cannot wait 30 s in a test. We verify the mechanism by:
  *   1. Pre-loading hot temperature responses in the UART mock queue.
- *   2. Calling nstar_health_read() directly and verifying it detects the issue.
+ *   2. Calling nstarHealthRead() directly and verifying it detects the issue.
  *   3. The thread itself is tested indirectly — this validates the detection logic.
  *
- * For the thread path, we call nstar_health_read() from the test directly
+ * For the thread path, we call nstarHealthRead() from the test directly
  * since the thread sleep is not overridable without modifying production code.
  */
-void test_health_read_hot_pa_threshold(void)
+void testHealthReadHotPaThreshold(void)
 {
     /* PA raw = 2300 → T = 0.06105×2300−50 = 90.4 °C (above 85 warning) */
     qr("<R02:08:203C>"); qr("<R02:FC:9E37>");  /* PA: 0x08FC = 2300 */
     qr("<R02:04:6551>"); qr("<R02:B0:1FFD>");  /* BB: normal        */
-    nstar_mock_gpio_set_value(FD_FN, 1);
+    nstarMockGPIOSetValue(FD_FN, 1);
 
-    nstar_health_t h;
+    nstarHealth_t h;
     memset(&h, 0, sizeof(h));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_health_read(g_ctx, &h));
-    TEST_ASSERT_TRUE(h.pa_temp_celsius > NSTAR_PA_TEMP_WARN_CELSIUS);
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarHealthRead(gCtx, &h));
+    TEST_ASSERT_TRUE(h.paTempCelsius > NSTAR_PA_TEMP_WARN_CELSIUS);
 }
 
 /**
@@ -300,36 +300,36 @@ void test_health_read_hot_pa_threshold(void)
  * We trigger this by:
  *   1. Starting a TX session.
  *   2. Queuing hot temperature responses.
- *   3. Directly calling nstar_health_read() and simulating what the
+ *   3. Directly calling nstarHealthRead() and simulating what the
  *      health thread would do: stop TX if temp > warn limit.
  * This tests the logic path without waiting 30 s.
  */
-void test_health_logic_stops_tx_on_high_temp(void)
+void testHealthLogicStopsTxOnHighTemp(void)
 {
     /* Start TX */
-    queue_tx_start();
+    queueTXStart();
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstar_tx_start(g_ctx, NSTAR_TX_RATE_32K));
+        nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
 
     /* Queue hot temperature */
     qr("<R02:08:203C>"); qr("<R02:FC:9E37>");
     qr("<R02:04:6551>"); qr("<R02:B0:1FFD>");
-    nstar_mock_gpio_set_value(FD_FN, 1);
+    nstarMockGPIOSetValue(FD_FN, 1);
 
     /* Read health — simulates what health thread does each cycle */
-    nstar_health_t h;
-    nstar_health_read(g_ctx, &h);
+    nstarHealth_t h;
+    nstarHealthRead(gCtx, &h);
 
     /* If hot: stop TX (mirrors health thread logic) */
-    if (h.pa_temp_celsius > NSTAR_PA_TEMP_WARN_CELSIUS) {
-        queue_tx_stop();
-        nstar_tx_stop(g_ctx);
-        on_fault(NSTAR_FAULT_TEMPERATURE);
+    if (h.paTempCelsius > NSTAR_PA_TEMP_WARN_CELSIUS) {
+        queueTXStop();
+        nstarTXStop(gCtx);
+        onFault(NSTAR_FAULT_TEMPERATURE);
     }
 
     /* Verify TX was stopped */
-    TEST_ASSERT_TRUE(g_sync.fault_count > 0);
-    TEST_ASSERT_EQUAL(NSTAR_FAULT_TEMPERATURE, g_sync.fault_source);
+    TEST_ASSERT_TRUE(gSync.faultCount > 0);
+    TEST_ASSERT_EQUAL(NSTAR_FAULT_TEMPERATURE, gSync.faultSource);
 }
 
 /* =========================================================================
@@ -338,7 +338,7 @@ void test_health_logic_stops_tx_on_high_temp(void)
  */
 
 /**
- * FAULT_N falling edge → fault thread fires on_fault(NSTAR_FAULT_SEL)
+ * FAULT_N falling edge → fault thread fires onFault(NSTAR_FAULT_SEL)
  * after FAULT_N recovers.
  *
  * Sequence queued in mock:
@@ -346,55 +346,55 @@ void test_health_logic_stops_tx_on_high_temp(void)
  *   FAULT_N rising   (N-STAR self-recovered)
  *   Startup sequence UART responses (re-init after fault)
  */
-void test_fault_thread_fires_fault_callback_on_recovery(void)
+void testFaultThreadFiresFaultCallbackOnRecovery(void)
 {
     /* Queue startup sequence for the re-init after fault */
-    queue_startup_responses();
+    queueStartupResponses();
 
     /* Queue FAULT_N: falling then rising */
-    nstar_mock_gpio_queue_edge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
-    nstar_mock_gpio_queue_edge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
 
-    /* Wait for on_fault callback (up to 2 s) */
-    int got = sync_wait(2000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_fault callback did not fire");
-    TEST_ASSERT_EQUAL(NSTAR_FAULT_SEL, g_sync.fault_source);
+    /* Wait for onFault callback (up to 2 s) */
+    int got = syncWait(2000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onFault callback did not fire");
+    TEST_ASSERT_EQUAL(NSTAR_FAULT_SEL, gSync.faultSource);
 }
 
 /**
- * FAULT_N during active TX → TX is stopped, then on_fault fires.
+ * FAULT_N during active TX → TX is stopped, then onFault fires.
  */
-void test_fault_thread_stops_tx_before_fault_callback(void)
+void testFaultThreadStopsTxBeforeFaultCallback(void)
 {
     /* Start TX */
-    queue_tx_start();
+    queueTXStart();
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstar_tx_start(g_ctx, NSTAR_TX_RATE_32K));
+        nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
 
     /* Write some data */
     uint8_t buf[64]; memset(buf, 0x11, sizeof(buf));
-    nstar_tx_write(g_ctx, buf, sizeof(buf));
+    nstarTXWrite(gCtx, buf, sizeof(buf));
 
     /* Queue startup responses for post-fault re-init */
-    queue_startup_responses();
+    queueStartupResponses();
     /* Queue W 0x40=0x00 Standby ACK for tx_stop */
-    queue_tx_stop();
+    queueTXStop();
 
     /* Reorder responses: tx_stop needs to happen before startup */
-    nstar_mock_reset();
-    sync_init();
-    nstar_mock_gpio_set_value(FD_FN, 1);
+    nstarMockReset();
+    syncInit();
+    nstarMockGPIOSetValue(FD_FN, 1);
     /* Re-start context with TX already active manually */
     /* Simpler approach: queue tx_stop then startup for fault handler */
-    queue_tx_stop();           /* for nstar_tx_stop() inside fault handler */
-    queue_startup_responses(); /* for nstar_startup_sequence() */
+    queueTXStop();           /* for nstarTXStop() inside fault handler */
+    queueStartupResponses(); /* for nstarStartupSequence() */
 
     /* Assert FAULT_N falling edge */
-    nstar_mock_gpio_queue_edge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
-    nstar_mock_gpio_queue_edge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
 
-    int got = sync_wait(2000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_fault callback did not fire after FAULT_N");
+    int got = syncWait(2000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onFault callback did not fire after FAULT_N");
 }
 
 /**
@@ -402,33 +402,33 @@ void test_fault_thread_stops_tx_before_fault_callback(void)
  * After RESET_N, FAULT_N eventually rises.
  * Verify: RESET_N GPIO was written LOW (value = 0).
  */
-void test_fault_thread_asserts_reset_n_on_no_recovery(void)
+void testFaultThreadAssertsResetNOnNoRecovery(void)
 {
     /* Queue startup for post-reset re-init */
-    queue_startup_responses();
+    queueStartupResponses();
 
     /* FAULT_N falls but never rises within timeout in the mock —
      * the mock returns NSTAR_ERR_TIMEOUT for the recovery wait.
      * Queue: falling (fault), then rising only after RESET_N.
      * The fault thread will timeout on first rising wait,
      * then assert RESET_N, then find the rising edge. */
-    nstar_mock_gpio_queue_edge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
     /* No rising edge queued for first wait → timeout → RESET_N asserted */
     /* Rising edge available for second wait after reset */
-    nstar_mock_gpio_queue_edge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
 
-    int got = sync_wait(2000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_fault callback did not fire after RESET_N");
+    int got = syncWait(2000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onFault callback did not fire after RESET_N");
 
     /* Verify RESET_N was driven LOW at some point (then HIGH again) */
     /* After the sequence, RESET_N should be HIGH (released) */
-    int reset_n_val = nstar_hal_gpio_read(FD_RST);
+    int resetNVal = nstarHALGPIORead(FD_RST);
     /* 0=LOW (asserted) or 1=HIGH (released) — either is acceptable here
      * since we can't time the observation precisely.
      * What we verify is that the fault callback DID fire, meaning the
      * thread completed the reset sequence. */
-    (void)reset_n_val;
-    TEST_ASSERT_EQUAL(NSTAR_FAULT_SEL, g_sync.fault_source);
+    (void)resetNVal;
+    TEST_ASSERT_EQUAL(NSTAR_FAULT_SEL, gSync.faultSource);
 }
 
 /* =========================================================================
@@ -441,18 +441,18 @@ int main(void)
     UNITY_BEGIN();
 
     /* health_read */
-    RUN_TEST(test_health_read_null_ctx_returns_param_error);
-    RUN_TEST(test_health_read_null_out_returns_param_error);
-    RUN_TEST(test_health_read_decodes_temperatures);
-    RUN_TEST(test_health_read_fault_active_when_fault_n_low);
-    RUN_TEST(test_health_read_temperature_formula_zero_raw);
-    RUN_TEST(test_health_read_hot_pa_threshold);
-    RUN_TEST(test_health_logic_stops_tx_on_high_temp);
+    RUN_TEST(testHealthReadNullCtxReturnsParamError);
+    RUN_TEST(testHealthReadNullOutReturnsParamError);
+    RUN_TEST(testHealthReadDecodesTemperatures);
+    RUN_TEST(testHealthReadFaultActiveWhenFaultNLow);
+    RUN_TEST(testHealthReadTemperatureFormulaZeroRaw);
+    RUN_TEST(testHealthReadHotPaThreshold);
+    RUN_TEST(testHealthLogicStopsTxOnHighTemp);
 
     /* fault thread */
-    RUN_TEST(test_fault_thread_fires_fault_callback_on_recovery);
-    RUN_TEST(test_fault_thread_stops_tx_before_fault_callback);
-    RUN_TEST(test_fault_thread_asserts_reset_n_on_no_recovery);
+    RUN_TEST(testFaultThreadFiresFaultCallbackOnRecovery);
+    RUN_TEST(testFaultThreadStopsTxBeforeFaultCallback);
+    RUN_TEST(testFaultThreadAssertsResetNOnNoRecovery);
 
     return UNITY_END();
 }

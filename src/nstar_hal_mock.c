@@ -27,121 +27,121 @@
 static struct {
     uint8_t  buf[MOCK_UART_RESP_BUF_MAX];
     size_t   len;
-} g_uart_responses[MOCK_UART_RESP_MAX];
+} gUARTResponses[MOCK_UART_RESP_MAX];
 
-static int  g_uart_resp_count  = 0;
-static int  g_uart_resp_idx    = 0;
-static int  g_uart_force_timeout = 0;    /* if 1, next read returns timeout */
+static int  gUARTRespCount  = 0;
+static int  gUARTRespIdx    = 0;
+static int  gUARTForceTimeout = 0;    /* if 1, next read returns timeout */
 
 /* UART write capture */
 #define MOCK_UART_WRITE_BUF_MAX  (NSTAR_FRAME_BUF_MAX * 8)
-static uint8_t g_uart_written[MOCK_UART_WRITE_BUF_MAX];
-static size_t  g_uart_written_len = 0;
+static uint8_t gUARTWritten[MOCK_UART_WRITE_BUF_MAX];
+static size_t  gUARTWrittenLen = 0;
 
 /* GPIO: scripted edge sequence */
 #define MOCK_GPIO_EVENTS_MAX    64
 static struct {
     int fd;
-    nstar_gpio_edge_t edge;
-    uint32_t delay_ms;   /* simulated delay before edge fires */
-} g_gpio_events[MOCK_GPIO_EVENTS_MAX];
-static int  g_gpio_event_count = 0;
-static int  g_gpio_event_idx   = 0;
-static int  g_gpio_values[32]  = {0};   /* indexed by fd */
+    nstarGPIOEdge_t edge;
+    uint32_t delayMS;   /* simulated delay before edge fires */
+} gGPIOEvents[MOCK_GPIO_EVENTS_MAX];
+static int  gGPIOEventCount = 0;
+static int  gGPIOEventIdx   = 0;
+static int  gGPIOValues[32]  = {0};   /* indexed by fd */
 
 /* Data interface write capture */
 #define MOCK_DATA_WRITE_MAX  (NSTAR_FRAME_SIZE_BYTES * 8)
-static uint8_t  g_data_written[MOCK_DATA_WRITE_MAX];
-static size_t   g_data_written_len = 0;
+static uint8_t  gDataWritten[MOCK_DATA_WRITE_MAX];
+static size_t   gDataWrittenLen = 0;
 
 /* Data interface read supply */
-static uint8_t  g_data_read_buf[MOCK_DATA_WRITE_MAX];
-static size_t   g_data_read_len   = 0;
-static size_t   g_data_read_pos   = 0;
+static uint8_t  gDataReadBuf[MOCK_DATA_WRITE_MAX];
+static size_t   gDataReadLen   = 0;
+static size_t   gDataReadPos   = 0;
 
 /* Clock state */
-static int      g_clock_running   = 0;
+static int      gClockRunning   = 0;
 
 /* =========================================================================
  * Mock control API (used by test code)
  * =========================================================================
  */
 
-void nstar_mock_reset(void)
+void nstarMockReset(void)
 {
-    memset(g_uart_responses, 0, sizeof(g_uart_responses));
-    g_uart_resp_count       = 0;
-    g_uart_resp_idx         = 0;
-    g_uart_force_timeout    = 0;
-    g_uart_written_len      = 0;
+    memset(gUARTResponses, 0, sizeof(gUARTResponses));
+    gUARTRespCount       = 0;
+    gUARTRespIdx         = 0;
+    gUARTForceTimeout    = 0;
+    gUARTWrittenLen      = 0;
 
-    memset(g_gpio_events, 0, sizeof(g_gpio_events));
-    g_gpio_event_count      = 0;
-    g_gpio_event_idx        = 0;
-    memset(g_gpio_values, 0, sizeof(g_gpio_values));
+    memset(gGPIOEvents, 0, sizeof(gGPIOEvents));
+    gGPIOEventCount      = 0;
+    gGPIOEventIdx        = 0;
+    memset(gGPIOValues, 0, sizeof(gGPIOValues));
 
-    g_data_written_len      = 0;
-    g_data_read_len         = 0;
-    g_data_read_pos         = 0;
-    g_clock_running         = 0;
+    gDataWrittenLen      = 0;
+    gDataReadLen         = 0;
+    gDataReadPos         = 0;
+    gClockRunning         = 0;
 }
 
-void nstar_mock_uart_queue_response(const uint8_t *buf, size_t len)
+void nstarMockUARTQueueResponse(const uint8_t *buf, size_t len)
 {
-    if (g_uart_resp_count >= MOCK_UART_RESP_MAX) return;
+    if (gUARTRespCount >= MOCK_UART_RESP_MAX) return;
     if (len > MOCK_UART_RESP_BUF_MAX) return;
-    memcpy(g_uart_responses[g_uart_resp_count].buf, buf, len);
-    g_uart_responses[g_uart_resp_count].len = len;
-    g_uart_resp_count++;
+    memcpy(gUARTResponses[gUARTRespCount].buf, buf, len);
+    gUARTResponses[gUARTRespCount].len = len;
+    gUARTRespCount++;
 }
 
-void nstar_mock_uart_force_timeout(int enable)
+void nstarMockUARTForceTimeout(int enable)
 {
-    g_uart_force_timeout = enable;
+    gUARTForceTimeout = enable;
 }
 
-const uint8_t *nstar_mock_uart_get_written(size_t *len_out)
+const uint8_t *nstarMockUARTGetWritten(size_t *lenOut)
 {
-    *len_out = g_uart_written_len;
-    return g_uart_written;
+    *lenOut = gUARTWrittenLen;
+    return gUARTWritten;
 }
 
-void nstar_mock_gpio_queue_edge(int fd, nstar_gpio_edge_t edge,
-                                 uint32_t delay_ms)
+void nstarMockGPIOQueueEdge(int fd, nstarGPIOEdge_t edge,
+                                 uint32_t delayMS)
 {
-    if (g_gpio_event_count >= MOCK_GPIO_EVENTS_MAX) return;
-    g_gpio_events[g_gpio_event_count].fd       = fd;
-    g_gpio_events[g_gpio_event_count].edge     = edge;
-    g_gpio_events[g_gpio_event_count].delay_ms = delay_ms;
-    g_gpio_event_count++;
+    if (gGPIOEventCount >= MOCK_GPIO_EVENTS_MAX) return;
+    gGPIOEvents[gGPIOEventCount].fd       = fd;
+    gGPIOEvents[gGPIOEventCount].edge     = edge;
+    gGPIOEvents[gGPIOEventCount].delayMS = delayMS;
+    gGPIOEventCount++;
     /* Update simulated GPIO value */
     if (fd < 32) {
-        g_gpio_values[fd] = (edge == NSTAR_GPIO_EDGE_RISING) ? 1 : 0;
+        gGPIOValues[fd] = (edge == NSTAR_GPIO_EDGE_RISING) ? 1 : 0;
     }
 }
 
-void nstar_mock_gpio_set_value(int fd, int value)
+void nstarMockGPIOSetValue(int fd, int value)
 {
-    if (fd < 32) g_gpio_values[fd] = value;
+    if (fd < 32) gGPIOValues[fd] = value;
 }
 
-void nstar_mock_data_supply_read(const uint8_t *buf, size_t len)
+void nstarMockDataSupplyRead(const uint8_t *buf, size_t len)
 {
     if (len > MOCK_DATA_WRITE_MAX) return;
-    memcpy(g_data_read_buf, buf, len);
-    g_data_read_len = len;
-    g_data_read_pos = 0;
+    memcpy(gDataReadBuf, buf, len);
+    gDataReadLen = len;
+    gDataReadPos = 0;
 }
 
-const uint8_t *nstar_mock_data_get_written(size_t *len_out)
+const uint8_t *nstarMockDataGetWritten(size_t *lenOut)
 {
-    *len_out = g_data_written_len;
-    return g_data_written;
+    *lenOut = gDataWrittenLen;
+    return gDataWritten;
 }
 
-int nstar_mock_data_clock_is_running(void)
+int nstarMockDataClockIsRunning(void)
 {
-    return g_clock_running;
+    return gClockRunning;
 }
 
 /* =========================================================================
@@ -149,49 +149,49 @@ int nstar_mock_data_clock_is_running(void)
  * =========================================================================
  */
 
-ssize_t nstar_hal_uart_write(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarHALUARTWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd;
-    if (g_uart_written_len + len <= MOCK_UART_WRITE_BUF_MAX) {
-        memcpy(g_uart_written + g_uart_written_len, buf, len);
-        g_uart_written_len += len;
+    if (gUARTWrittenLen + len <= MOCK_UART_WRITE_BUF_MAX) {
+        memcpy(gUARTWritten + gUARTWrittenLen, buf, len);
+        gUARTWrittenLen += len;
     }
     return (ssize_t)len;
 }
 
-ssize_t nstar_hal_uart_read(int fd, uint8_t *buf, size_t len,
-                             uint32_t timeout_ms)
+ssize_t nstarHALUARTRead(int fd, uint8_t *buf, size_t len,
+                             uint32_t timeoutMs)
 {
     (void)fd;
-    (void)timeout_ms;
+    (void)timeoutMs;
 
-    if (g_uart_force_timeout) return 0;
+    if (gUARTForceTimeout) return 0;
 
-    if (g_uart_resp_idx >= g_uart_resp_count) return 0;   /* no more responses */
+    if (gUARTRespIdx >= gUARTRespCount) return 0;   /* no more responses */
 
-    size_t avail = g_uart_responses[g_uart_resp_idx].len;
+    size_t avail = gUARTResponses[gUARTRespIdx].len;
     size_t copy  = (avail < len) ? avail : len;
-    memcpy(buf, g_uart_responses[g_uart_resp_idx].buf, copy);
-    g_uart_resp_idx++;
+    memcpy(buf, gUARTResponses[gUARTRespIdx].buf, copy);
+    gUARTRespIdx++;
     return (ssize_t)copy;
 }
 
-nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
-                                         uint32_t timeout_ms)
+nstarResult_t nstarHALGPIOWaitEdge(int fd, nstarGPIOEdge_t edge,
+                                         uint32_t timeoutMs)
 {
-    (void)timeout_ms;
+    (void)timeoutMs;
 
-    if (g_gpio_event_idx >= g_gpio_event_count) {
+    if (gGPIOEventIdx >= gGPIOEventCount) {
         return NSTAR_ERR_TIMEOUT;  /* no more scripted events */
     }
 
     /* Find next event matching this fd and edge */
-    for (int i = g_gpio_event_idx; i < g_gpio_event_count; i++) {
-        if (g_gpio_events[i].fd == fd &&
-            g_gpio_events[i].edge == edge) {
-            g_gpio_event_idx = i + 1;
+    for (int i = gGPIOEventIdx; i < gGPIOEventCount; i++) {
+        if (gGPIOEvents[i].fd == fd &&
+            gGPIOEvents[i].edge == edge) {
+            gGPIOEventIdx = i + 1;
             if (fd < 32) {
-                g_gpio_values[fd] = (edge == NSTAR_GPIO_EDGE_RISING) ? 1 : 0;
+                gGPIOValues[fd] = (edge == NSTAR_GPIO_EDGE_RISING) ? 1 : 0;
             }
             return NSTAR_OK;
         }
@@ -199,55 +199,55 @@ nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
     return NSTAR_ERR_TIMEOUT;
 }
 
-int nstar_hal_gpio_read(int fd)
+int nstarHALGPIORead(int fd)
 {
     if (fd < 0 || fd >= 32) return -1;
-    return g_gpio_values[fd];
+    return gGPIOValues[fd];
 }
 
-nstar_result_t nstar_hal_gpio_write(int fd, int value)
+nstarResult_t nstarHALGPIOWrite(int fd, int value)
 {
     if (fd < 0 || fd >= 32) return NSTAR_ERR_HAL;
-    g_gpio_values[fd] = value ? 1 : 0;
+    gGPIOValues[fd] = value ? 1 : 0;
     return NSTAR_OK;
 }
 
-ssize_t nstar_hal_data_write(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarHALDataWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd;
-    if (g_data_written_len + len <= MOCK_DATA_WRITE_MAX) {
-        memcpy(g_data_written + g_data_written_len, buf, len);
-        g_data_written_len += len;
+    if (gDataWrittenLen + len <= MOCK_DATA_WRITE_MAX) {
+        memcpy(gDataWritten + gDataWrittenLen, buf, len);
+        gDataWrittenLen += len;
     }
     return (ssize_t)len;
 }
 
-ssize_t nstar_hal_data_read(int fd, uint8_t *buf, size_t len)
+ssize_t nstarHALDataRead(int fd, uint8_t *buf, size_t len)
 {
     (void)fd;
-    size_t avail = g_data_read_len - g_data_read_pos;
+    size_t avail = gDataReadLen - gDataReadPos;
     if (avail == 0) return 0;
     size_t copy = (avail < len) ? avail : len;
-    memcpy(buf, g_data_read_buf + g_data_read_pos, copy);
-    g_data_read_pos += copy;
+    memcpy(buf, gDataReadBuf + gDataReadPos, copy);
+    gDataReadPos += copy;
     return (ssize_t)copy;
 }
 
-nstar_result_t nstar_hal_data_clock_start(int fd)
+nstarResult_t nstarHALDataClockStart(int fd)
 {
     (void)fd;
-    g_clock_running = 1;
+    gClockRunning = 1;
     return NSTAR_OK;
 }
 
-nstar_result_t nstar_hal_data_clock_stop(int fd)
+nstarResult_t nstarHALDataClockStop(int fd)
 {
     (void)fd;
-    g_clock_running = 0;
+    gClockRunning = 0;
     return NSTAR_OK;
 }
 
-void nstar_hal_sleep_ms(uint32_t ms)
+void nstarHALSleepMS(uint32_t ms)
 {
     /*
      * Tests sleep a scaled-down real duration so the suite stays fast,
@@ -258,8 +258,8 @@ void nstar_hal_sleep_ms(uint32_t ms)
      * Without this scaling, a fixed-duration sleep made every production
      * delay resolve at the same real time, letting the health thread's
      * first poll race a test's own synchronous multi-step UART sequence
-     * (e.g. nstar_tx_start()) for the same mocked response queue, even
-     * though nstar_reg_read_multi() is not atomic across the uart_mutex
+     * (e.g. nstarTXStart()) for the same mocked response queue, even
+     * though nstarRegReadMulti() is not atomic across the uartMutex
      * (it acquires/releases per register, same as production).
      *
      * Scaling by /100 keeps the 30000 ms health interval at 300 ms real
@@ -268,17 +268,17 @@ void nstar_hal_sleep_ms(uint32_t ms)
      * production sleep (e.g. clock pre-stable) becomes 1 ms, keeping
      * the suite fast.
      */
-    uint32_t real_ms = ms / 100;
-    if (real_ms == 0) real_ms = 1;
+    uint32_t realMS = ms / 100;
+    if (realMS == 0) realMS = 1;
 
     struct timespec ts = {
-        .tv_sec  = real_ms / 1000,
-        .tv_nsec = (long)(real_ms % 1000) * 1000000L
+        .tv_sec  = realMS / 1000,
+        .tv_nsec = (long)(realMS % 1000) * 1000000L
     };
     nanosleep(&ts, NULL);
 }
 
-uint64_t nstar_hal_timestamp_ms(void)
+uint64_t nstarHALTimestampMS(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);

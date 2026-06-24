@@ -29,12 +29,12 @@
  * =========================================================================
  */
 
-static char nibble_to_hex(uint8_t n)
+static char nibbleToHex(uint8_t n)
 {
     return (n < 10) ? (char)('0' + n) : (char)('A' + n - 10);
 }
 
-static int hex_to_nibble(char c)
+static int hexToNibble(char c)
 {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'A' && c <= 'F') return c - 'A' + 10;
@@ -42,22 +42,22 @@ static int hex_to_nibble(char c)
     return -1;
 }
 
-static void hex_encode(const uint8_t *src, size_t src_len, char *dst)
+static void hexEncode(const uint8_t *src, size_t srcLen, char *dst)
 {
-    for (size_t i = 0; i < src_len; i++) {
-        dst[i * 2]     = nibble_to_hex((src[i] >> 4) & 0x0F);
-        dst[i * 2 + 1] = nibble_to_hex(src[i] & 0x0F);
+    for (size_t i = 0; i < srcLen; i++) {
+        dst[i * 2]     = nibbleToHex((src[i] >> 4) & 0x0F);
+        dst[i * 2 + 1] = nibbleToHex(src[i] & 0x0F);
     }
 }
 
-static bool hex_decode(const char *src, size_t src_len,
-                        uint8_t *dst, size_t *dst_len_out)
+static bool hexDecode(const char *src, size_t srcLen,
+                        uint8_t *dst, size_t *dstLenOut)
 {
-    if (src_len % 2 != 0) return false;
-    *dst_len_out = src_len / 2;
-    for (size_t i = 0; i < *dst_len_out; i++) {
-        int hi = hex_to_nibble(src[i * 2]);
-        int lo = hex_to_nibble(src[i * 2 + 1]);
+    if (srcLen % 2 != 0) return false;
+    *dstLenOut = srcLen / 2;
+    for (size_t i = 0; i < *dstLenOut; i++) {
+        int hi = hexToNibble(src[i * 2]);
+        int lo = hexToNibble(src[i * 2 + 1]);
         if (hi < 0 || lo < 0) return false;
         dst[i] = (uint8_t)((hi << 4) | lo);
     }
@@ -69,11 +69,11 @@ static bool hex_decode(const char *src, size_t src_len,
  * =========================================================================
  * Poly: 0x1021, Init: 0x0000, MSB first, no reflection.
  * Verification (IRD §3.3.2.1):
- *   nstar_crc16_xmodem("123456789", 9) == 0x31C3
- *   nstar_crc16_xmodem("<V00::",    6) == 0x68D3
- *   nstar_crc16_xmodem("<R02:10:",  8) == 0x9EA5
+ *   nstarCRC16XMODEM("123456789", 9) == 0x31C3
+ *   nstarCRC16XMODEM("<V00::",    6) == 0x68D3
+ *   nstarCRC16XMODEM("<R02:10:",  8) == 0x9EA5
  */
-uint16_t nstar_crc16_xmodem(const uint8_t *data, size_t len)
+uint16_t nstarCRC16XMODEM(const uint8_t *data, size_t len)
 {
     uint16_t crc = 0x0000U;
     for (size_t i = 0; i < len; i++) {
@@ -100,7 +100,7 @@ uint16_t nstar_crc16_xmodem(const uint8_t *data, size_t len)
  *   1       CMD_ID      1 ASCII char  e.g. 'R'
  *   2-3     DATA_SIZE   2 ASCII hex chars = count of ASCII chars in DATA
  *   4       ':'         Sep1
- *   5..N    DATA        data_len*2 ASCII hex chars
+ *   5..N    DATA        dataLen*2 ASCII hex chars
  *   N+1     ':'         Sep2  -- INCLUDED in CRC input
  *   N+2..N+5 CRC        4 ASCII hex chars
  *   N+6     '>'         End delimiter
@@ -117,35 +117,35 @@ uint16_t nstar_crc16_xmodem(const uint8_t *data, size_t len)
  *   W cmd (addr=0x40, val=0x01):  <W04:4001:CCCC>
  *     DATA_SIZE='04' (4 ASCII chars), DATA='4001', CRC input=b"<W04:4001:"
  */
-nstar_result_t nstar_frame_encode(char cmd_id,
-                                   const uint8_t *data_in, size_t data_len,
-                                   uint8_t *buf_out, size_t *len_out)
+nstarResult_t nstarFrameEncode(char cmdId,
+                                   const uint8_t *dataIn, size_t dataLen,
+                                   uint8_t *bufOut, size_t *lenOut)
 {
-    if (!buf_out || !len_out) return NSTAR_ERR_PARAM;
-    if (data_len > 0 && !data_in) return NSTAR_ERR_PARAM;
+    if (!bufOut || !lenOut) return NSTAR_ERR_PARAM;
+    if (dataLen > 0 && !dataIn) return NSTAR_ERR_PARAM;
     /* DATA_SIZE field is 2 hex chars encoding ascii char count (max 0xFF = 255) */
-    if (data_len > 127) return NSTAR_ERR_PARAM; /* 127 raw = 254 ASCII chars, fits in 2 hex */
+    if (dataLen > 127) return NSTAR_ERR_PARAM; /* 127 raw = 254 ASCII chars, fits in 2 hex */
 
-    uint8_t *p = buf_out;
+    uint8_t *p = bufOut;
 
     /* Start delimiter */
     *p++ = (uint8_t)NSTAR_FRAME_START;
 
     /* CMD_ID */
-    *p++ = (uint8_t)cmd_id;
+    *p++ = (uint8_t)cmdId;
 
-    /* DATA_SIZE = number of ASCII chars in DATA field = data_len * 2 */
-    size_t ascii_data_len = data_len * 2;
-    *p++ = (uint8_t)nibble_to_hex((uint8_t)((ascii_data_len >> 4) & 0x0F));
-    *p++ = (uint8_t)nibble_to_hex((uint8_t)(ascii_data_len & 0x0F));
+    /* DATA_SIZE = number of ASCII chars in DATA field = dataLen * 2 */
+    size_t asciiDataLen = dataLen * 2;
+    *p++ = (uint8_t)nibbleToHex((uint8_t)((asciiDataLen >> 4) & 0x0F));
+    *p++ = (uint8_t)nibbleToHex((uint8_t)(asciiDataLen & 0x0F));
 
     /* Sep1 */
     *p++ = (uint8_t)NSTAR_FRAME_SEP;
 
     /* DATA: each raw byte -> 2 uppercase ASCII hex chars */
-    if (data_len > 0) {
-        hex_encode(data_in, data_len, (char *)p);
-        p += ascii_data_len;
+    if (dataLen > 0) {
+        hexEncode(dataIn, dataLen, (char *)p);
+        p += asciiDataLen;
     }
 
     /* Sep2 — written BEFORE CRC computation because it is part of CRC input */
@@ -153,20 +153,20 @@ nstar_result_t nstar_frame_encode(char cmd_id,
 
 #ifdef NSTAR_CRC_ENABLED
     /* CRC over everything written so far: '<' CMD SIZE ':' DATA ':' */
-    size_t crc_input_len = (size_t)(p - buf_out);
-    uint16_t crc = nstar_crc16_xmodem(buf_out, crc_input_len);
+    size_t crcInputLen = (size_t)(p - bufOut);
+    uint16_t crc = nstarCRC16XMODEM(bufOut, crcInputLen);
 
     /* CRC as 4 uppercase ASCII hex chars */
-    *p++ = (uint8_t)nibble_to_hex((crc >> 12) & 0x0F);
-    *p++ = (uint8_t)nibble_to_hex((crc >>  8) & 0x0F);
-    *p++ = (uint8_t)nibble_to_hex((crc >>  4) & 0x0F);
-    *p++ = (uint8_t)nibble_to_hex(crc & 0x0F);
+    *p++ = (uint8_t)nibbleToHex((crc >> 12) & 0x0F);
+    *p++ = (uint8_t)nibbleToHex((crc >>  8) & 0x0F);
+    *p++ = (uint8_t)nibbleToHex((crc >>  4) & 0x0F);
+    *p++ = (uint8_t)nibbleToHex(crc & 0x0F);
 #endif
 
     /* End delimiter */
     *p++ = (uint8_t)NSTAR_FRAME_END;
 
-    *len_out = (size_t)(p - buf_out);
+    *lenOut = (size_t)(p - bufOut);
     return NSTAR_OK;
 }
 
@@ -184,14 +184,14 @@ nstar_result_t nstar_frame_encode(char cmd_id,
  * Decode converts those ASCII pairs back to raw bytes.
  *
  * CRC verification:
- *   Input = buf[0 .. sep2_pos] inclusive
- *   sep2_pos = 5 + SIZE  (the Sep2 immediately after DATA)
+ *   Input = buf[0 .. sep2Pos] inclusive
+ *   sep2Pos = 5 + SIZE  (the Sep2 immediately after DATA)
  */
-nstar_result_t nstar_frame_decode(const uint8_t *buf, size_t len,
-                                   char *cmd_id_out,
-                                   uint8_t *data_out, size_t *data_len_out)
+nstarResult_t nstarFrameDecode(const uint8_t *buf, size_t len,
+                                   char *cmdIdOut,
+                                   uint8_t *dataOut, size_t *dataLenOut)
 {
-    if (!buf || !cmd_id_out || !data_out || !data_len_out) {
+    if (!buf || !cmdIdOut || !dataOut || !dataLenOut) {
         return NSTAR_ERR_PARAM;
     }
 
@@ -206,63 +206,63 @@ nstar_result_t nstar_frame_decode(const uint8_t *buf, size_t len,
     if (buf[len - 1] != (uint8_t)NSTAR_FRAME_END) return NSTAR_ERR_BAD_FRAME;
 
     /* CMD_ID at index 1 */
-    *cmd_id_out = (char)buf[1];
+    *cmdIdOut = (char)buf[1];
 
     /* DATA_SIZE at index 2-3: ASCII hex count of chars in DATA */
-    int size_hi = hex_to_nibble((char)buf[2]);
-    int size_lo = hex_to_nibble((char)buf[3]);
-    if (size_hi < 0 || size_lo < 0) return NSTAR_ERR_BAD_FRAME;
-    size_t data_ascii_len = (size_t)((size_hi << 4) | size_lo);
+    int sizeHi = hexToNibble((char)buf[2]);
+    int sizeLo = hexToNibble((char)buf[3]);
+    if (sizeHi < 0 || sizeLo < 0) return NSTAR_ERR_BAD_FRAME;
+    size_t dataAsciiLen = (size_t)((sizeHi << 4) | sizeLo);
 
     /* Sep1 at index 4 */
     if (buf[4] != (uint8_t)NSTAR_FRAME_SEP) return NSTAR_ERR_BAD_FRAME;
 
-    /* DATA at index 5, length = data_ascii_len ASCII chars */
-    size_t data_start = 5;
-    size_t sep2_pos   = data_start + data_ascii_len;  /* index of Sep2 */
+    /* DATA at index 5, length = dataAsciiLen ASCII chars */
+    size_t dataStart = 5;
+    size_t sep2Pos   = dataStart + dataAsciiLen;  /* index of Sep2 */
 
     /* Sep2 must be present */
-    if (sep2_pos >= len) return NSTAR_ERR_BAD_FRAME;
-    if (buf[sep2_pos] != (uint8_t)NSTAR_FRAME_SEP) return NSTAR_ERR_BAD_FRAME;
+    if (sep2Pos >= len) return NSTAR_ERR_BAD_FRAME;
+    if (buf[sep2Pos] != (uint8_t)NSTAR_FRAME_SEP) return NSTAR_ERR_BAD_FRAME;
 
 #ifdef NSTAR_CRC_ENABLED
     /*
      * With CRC: after Sep2 we need 4 CRC chars then '>'.
-     * sep2_pos + 1 + 4 + 1 = sep2_pos + 6 = len
+     * sep2Pos + 1 + 4 + 1 = sep2Pos + 6 = len
      */
-    if (sep2_pos + 6 != len) return NSTAR_ERR_BAD_FRAME;
+    if (sep2Pos + 6 != len) return NSTAR_ERR_BAD_FRAME;
 
-    /* Extract declared CRC from frame (4 chars at sep2_pos+1) */
-    int c0 = hex_to_nibble((char)buf[sep2_pos + 1]);
-    int c1 = hex_to_nibble((char)buf[sep2_pos + 2]);
-    int c2 = hex_to_nibble((char)buf[sep2_pos + 3]);
-    int c3 = hex_to_nibble((char)buf[sep2_pos + 4]);
+    /* Extract declared CRC from frame (4 chars at sep2Pos+1) */
+    int c0 = hexToNibble((char)buf[sep2Pos + 1]);
+    int c1 = hexToNibble((char)buf[sep2Pos + 2]);
+    int c2 = hexToNibble((char)buf[sep2Pos + 3]);
+    int c3 = hexToNibble((char)buf[sep2Pos + 4]);
     if (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0) return NSTAR_ERR_BAD_FRAME;
-    uint16_t received_crc = (uint16_t)(((uint16_t)c0 << 12) |
+    uint16_t receivedCRC = (uint16_t)(((uint16_t)c0 << 12) |
                                         ((uint16_t)c1 <<  8) |
                                         ((uint16_t)c2 <<  4) |
                                          (uint16_t)c3);
 
     /*
-     * CRC input = buf[0 .. sep2_pos] inclusive (includes '<' and Sep2).
+     * CRC input = buf[0 .. sep2Pos] inclusive (includes '<' and Sep2).
      */
-    uint16_t computed_crc = nstar_crc16_xmodem(buf, sep2_pos + 1);
-    if (computed_crc != received_crc) return NSTAR_ERR_CRC;
+    uint16_t computedCRC = nstarCRC16XMODEM(buf, sep2Pos + 1);
+    if (computedCRC != receivedCRC) return NSTAR_ERR_CRC;
 
 #else /* CRC disabled */
     /*
      * Without CRC: after Sep2 we expect only '>'.
-     * sep2_pos + 1 + 1 = sep2_pos + 2 = len
+     * sep2Pos + 1 + 1 = sep2Pos + 2 = len
      */
-    if (sep2_pos + 2 != len) return NSTAR_ERR_BAD_FRAME;
+    if (sep2Pos + 2 != len) return NSTAR_ERR_BAD_FRAME;
 #endif
 
     /* Hex-decode the DATA field */
-    if (data_ascii_len == 0) {
-        *data_len_out = 0;
+    if (dataAsciiLen == 0) {
+        *dataLenOut = 0;
     } else {
-        if (!hex_decode((const char *)(buf + data_start),
-                        data_ascii_len, data_out, data_len_out)) {
+        if (!hexDecode((const char *)(buf + dataStart),
+                        dataAsciiLen, dataOut, dataLenOut)) {
             return NSTAR_ERR_BAD_FRAME;
         }
     }

@@ -5,56 +5,56 @@
  */
 #include "nstar.h"
 
-ssize_t nstar_hal_uart_write(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarHALUARTWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd; (void)buf; (void)len;
     return -1;  /* Stage 6 */
 }
 
-ssize_t nstar_hal_uart_read(int fd, uint8_t *buf, size_t len,
-                             uint32_t timeout_ms)
+ssize_t nstarHALUARTRead(int fd, uint8_t *buf, size_t len,
+                             uint32_t timeoutMs)
 {
-    (void)fd; (void)buf; (void)len; (void)timeout_ms;
+    (void)fd; (void)buf; (void)len; (void)timeoutMs;
     return -1;  /* Stage 6 */
 }
 
-nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
-                                         uint32_t timeout_ms)
+nstarResult_t nstarHALGPIOWaitEdge(int fd, nstarGPIOEdge_t edge,
+                                         uint32_t timeoutMs)
 {
-    (void)fd; (void)edge; (void)timeout_ms;
+    (void)fd; (void)edge; (void)timeoutMs;
     return NSTAR_ERR_HAL;  /* Stage 6 */
 }
 
-int nstar_hal_gpio_read(int fd)
+int nstarHALGPIORead(int fd)
 {
     (void)fd;
     return -1;  /* Stage 6 */
 }
 
-nstar_result_t nstar_hal_gpio_write(int fd, int value)
+nstarResult_t nstarHALGPIOWrite(int fd, int value)
 {
     (void)fd; (void)value;
     return NSTAR_ERR_HAL;  /* Stage 6 */
 }
 
-ssize_t nstar_hal_data_write(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarHALDataWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd; (void)buf; (void)len;
     return -1;  /* Stage 6 — open point */
 }
 
-ssize_t nstar_hal_data_read(int fd, uint8_t *buf, size_t len)
+ssize_t nstarHALDataRead(int fd, uint8_t *buf, size_t len)
 {
     (void)fd; (void)buf; (void)len;
     return -1;  /* Stage 6 — open point */
 }
 
-void nstar_hal_sleep_ms(uint32_t ms)
+void nstarHALSleepMS(uint32_t ms)
 {
     (void)ms;  /* Stage 6 */
 }
 
-uint64_t nstar_hal_timestamp_ms(void)
+uint64_t nstarHALTimestampMS(void)
 {
     return 0;  /* Stage 6 */
 }

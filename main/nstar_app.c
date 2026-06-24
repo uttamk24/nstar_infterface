@@ -5,24 +5,24 @@
 #include "nstar.h"
 #include <stdio.h>
 
-static void on_frame_received(const uint8_t *buf, size_t len)
+static void onFrameReceived(const uint8_t *buf, size_t len)
 {
     (void)buf; (void)len;
     printf("app: frame received (%zu bytes)\n", len);
 }
 
-static void on_tx_complete(size_t bytes_sent)
+static void onTXComplete(size_t bytesSent)
 {
-    printf("app: TX complete (%zu bytes)\n", bytes_sent);
+    printf("app: TX complete (%zu bytes)\n", bytesSent);
 }
 
-static void on_fault(nstar_fault_source_t source)
+static void onFault(nstarFaultSource_t source)
 {
     printf("app: FAULT source=%d\n", (int)source);
 }
 
-static void on_lock_acquired(void) { printf("app: lock acquired\n"); }
-static void on_lock_lost(void)     { printf("app: lock lost\n");     }
+static void onLockAcquired(void) { printf("app: lock acquired\n"); }
+static void onLockLost(void)     { printf("app: lock lost\n");     }
 
 int main(void)
 {

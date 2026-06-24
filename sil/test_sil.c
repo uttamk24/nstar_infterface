@@ -1,5 +1,5 @@
 /**
- * @file  test_sil.c
+ * @file  testSil.c
  * @brief SIL (Software-In-the-Loop) test suite.
  *
  * Unlike the Stage 1-5 unit tests (which call nstar_core.c functions
@@ -46,25 +46,25 @@
  * =========================================================================
  */
 
-static pid_t g_sim_pid = -1;
-static pid_t g_app_pid = -1;
+static pid_t gSimPid = -1;
+static pid_t gAppPid = -1;
 
-static char g_sim_path[512];
-static char g_app_path[512];
+static char gSimPath[512];
+static char gAppPath[512];
 
 /** Recursively-light cleanup: remove every file under the SIL root. */
-static void clean_sil_root(void)
+static void cleanSILRoot(void)
 {
     char cmd[600];
     snprintf(cmd, sizeof(cmd), "rm -rf '%s' && mkdir -p '%s'",
-              sil_root(), sil_root());
+              silRoot(), silRoot());
     system(cmd);
 }
 
-static int wait_for_file(const char *leaf, int timeout_ms)
+static int waitForFile(const char *leaf, int timeoutMs)
 {
     char path[512];
-    sil_path(path, sizeof(path), leaf);
+    silPath(path, sizeof(path), leaf);
 
     struct timespec start, now;
     clock_gettime(CLOCK_MONOTONIC, &start);
@@ -72,9 +72,9 @@ static int wait_for_file(const char *leaf, int timeout_ms)
         struct stat st;
         if (stat(path, &st) == 0) return 1;
         clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 +
+        long elapsedMS = (now.tv_sec - start.tv_sec) * 1000 +
                           (now.tv_nsec - start.tv_nsec) / 1000000;
-        if (elapsed_ms >= timeout_ms) return 0;
+        if (elapsedMS >= timeoutMs) return 0;
         struct timespec d = { 0, 20 * 1000000L };
         nanosleep(&d, NULL);
     }
@@ -102,7 +102,7 @@ static pid_t spawn(const char *path, const char *arg1)
     return pid;
 }
 
-static void kill_and_wait(pid_t pid)
+static void killAndWait(pid_t pid)
 {
     if (pid <= 0) return;
     kill(pid, SIGTERM);
@@ -113,19 +113,19 @@ static void kill_and_wait(pid_t pid)
         pid_t r = waitpid(pid, &status, WNOHANG);
         if (r == pid) return;
         clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 +
+        long elapsedMS = (now.tv_sec - start.tv_sec) * 1000 +
                           (now.tv_nsec - start.tv_nsec) / 1000000;
-        if (elapsed_ms >= 2000) { kill(pid, SIGKILL); waitpid(pid, &status, 0); return; }
+        if (elapsedMS >= 2000) { kill(pid, SIGKILL); waitpid(pid, &status, 0); return; }
         struct timespec d = { 0, 20 * 1000000L };
         nanosleep(&d, NULL);
     }
 }
 
 /** Write a GPIO line file to 0 or 1. */
-static void set_gpio(const char *leaf, int value)
+static void setGPIO(const char *leaf, int value)
 {
     char path[512];
-    sil_path(path, sizeof(path), leaf);
+    silPath(path, sizeof(path), leaf);
     FILE *f = fopen(path, "w");
     if (!f) return;
     fprintf(f, "%d", value);
@@ -133,10 +133,10 @@ static void set_gpio(const char *leaf, int value)
 }
 
 /** Append one command line to the simulator control file. */
-static void sim_control(const char *line)
+static void simControl(const char *line)
 {
     char path[512];
-    sil_path(path, sizeof(path), SIL_SIM_CONTROL_FILE);
+    silPath(path, sizeof(path), SIL_SIM_CONTROL_FILE);
     FILE *f = fopen(path, "a");
     if (!f) return;
     fprintf(f, "%s\n", line);
@@ -144,10 +144,10 @@ static void sim_control(const char *line)
 }
 
 /** Append one command line to the application control file. */
-static void app_control(const char *line)
+static void appControl(const char *line)
 {
     char path[512];
-    sil_path(path, sizeof(path), SIL_APP_CONTROL_FILE);
+    silPath(path, sizeof(path), SIL_APP_CONTROL_FILE);
     FILE *f = fopen(path, "a");
     if (!f) return;
     fprintf(f, "%s\n", line);
@@ -155,10 +155,10 @@ static void app_control(const char *line)
 }
 
 /** Write data bytes to the RX data file the dummy HAL reads from. */
-static void supply_rx_data(const uint8_t *buf, size_t len)
+static void supplyRXData(const uint8_t *buf, size_t len)
 {
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_RX_FILE);
+    silPath(path, sizeof(path), SIL_DATA_RX_FILE);
     FILE *f = fopen(path, "wb");
     if (!f) return;
     fwrite(buf, 1, len, f);
@@ -167,25 +167,25 @@ static void supply_rx_data(const uint8_t *buf, size_t len)
 
 /**
  * Read the entire TX data file the dummy HAL has appended to via
- * nstar_hal_data_write(). Returns the number of bytes read into buf
- * (up to buf_cap), or 0 if the file does not exist yet.
+ * nstarHALDataWrite(). Returns the number of bytes read into buf
+ * (up to bufCap), or 0 if the file does not exist yet.
  */
-static size_t read_tx_data(uint8_t *buf, size_t buf_cap)
+static size_t readTXData(uint8_t *buf, size_t bufCap)
 {
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_TX_FILE);
+    silPath(path, sizeof(path), SIL_DATA_TX_FILE);
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
-    size_t n = fread(buf, 1, buf_cap, f);
+    size_t n = fread(buf, 1, bufCap, f);
     fclose(f);
     return n;
 }
 
 /** Read the current data-clock-state file ("0" or "1"). Returns -1 if absent. */
-static int read_data_clock_state(void)
+static int readDataClockState(void)
 {
     char path[512];
-    sil_path(path, sizeof(path), SIL_DATA_CLOCK_FILE);
+    silPath(path, sizeof(path), SIL_DATA_CLOCK_FILE);
     FILE *f = fopen(path, "r");
     if (!f) return -1;
     char buf[8] = {0};
@@ -202,23 +202,23 @@ static int read_data_clock_state(void)
 
 void setUp(void)
 {
-    clean_sil_root();
+    cleanSILRoot();
 
     if (!getenv("NSTAR_SIL_ROOT")) {
         setenv("NSTAR_SIL_ROOT", SIL_DEFAULT_ROOT, 1);
     }
 
-    g_sim_pid = spawn(g_sim_path, NULL);
-    TEST_ASSERT_TRUE_MESSAGE(wait_for_file(SIL_SIM_READY_FILE, 3000),
+    gSimPid = spawn(gSimPath, NULL);
+    TEST_ASSERT_TRUE_MESSAGE(waitForFile(SIL_SIM_READY_FILE, 3000),
         "nstar_sim did not become ready in time");
 }
 
 void tearDown(void)
 {
-    kill_and_wait(g_app_pid);
-    kill_and_wait(g_sim_pid);
-    g_app_pid = -1;
-    g_sim_pid = -1;
+    killAndWait(gAppPid);
+    killAndWait(gSimPid);
+    gAppPid = -1;
+    gSimPid = -1;
 }
 
 /* =========================================================================
@@ -226,13 +226,13 @@ void tearDown(void)
  * =========================================================================
  */
 
-void test_sil_fsm_startup_reaches_ready(void)
+void testSilFsmStartupReachesReady(void)
 {
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
-    int got = sil_status_wait_for("MODULE_STATE", "READY", 5000);
+    int got = silStatusWaitFor("MODULE_STATE", "READY", 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
-        "module_state did not reach READY within timeout");
+        "moduleState did not reach READY within timeout");
 }
 
 /* =========================================================================
@@ -240,18 +240,18 @@ void test_sil_fsm_startup_reaches_ready(void)
  * =========================================================================
  */
 
-void test_sil_fsm_fpga_type_mismatch_drives_fault(void)
+void testSilFsmFpgaTypeMismatchDrivesFault(void)
 {
     /* Force the simulator to report an unexpected FPGA_TYPE BEFORE the
      * app starts its startup_sequence, so the very first identity/type
      * check fails. */
-    sim_control("FPGA_TYPE=FF");
+    simControl("FPGA_TYPE=FF");
 
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
-    int got = sil_status_wait_for("MODULE_STATE", "FAULT", 5000);
+    int got = silStatusWaitFor("MODULE_STATE", "FAULT", 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
-        "module_state did not reach FAULT after FPGA_TYPE mismatch");
+        "moduleState did not reach FAULT after FPGA_TYPE mismatch");
 }
 
 /* =========================================================================
@@ -266,31 +266,31 @@ void test_sil_fsm_fpga_type_mismatch_drives_fault(void)
  * to rule out the app simply ignoring responses.
  */
 
-void test_sil_commands_register_value_reflected_in_identity_path(void)
+void testSilCommandsRegisterValueReflectedInIdentityPath(void)
 {
     /* A non-default but still-valid FPGA_TYPE the app should accept is
-     * not possible (only 0x62 passes nstar_startup_sequence's check) —
+     * not possible (only 0x62 passes nstarStartupSequence's check) —
      * instead, prove the round-trip is live by setting a WRONG type and
      * confirming the app's startup correctly fails (rather than silently
      * succeeding, which would indicate it isn't really reading the
      * simulator's register at all). */
-    sim_control("FPGA_TYPE=99");
+    simControl("FPGA_TYPE=99");
 
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
-    int got = sil_status_wait_for("MODULE_STATE", "FAULT", 5000);
+    int got = silStatusWaitFor("MODULE_STATE", "FAULT", 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
         "Expected FAULT when simulator reports FPGA_TYPE=0x99");
 
     /* Now reset the simulator's register state and confirm a freshly
      * started app reaches READY — proving the earlier FAULT was due to
      * the injected register value, not a coincidence. */
-    kill_and_wait(g_app_pid);
-    g_app_pid = -1;
-    sim_control("RESET");
+    killAndWait(gAppPid);
+    gAppPid = -1;
+    simControl("RESET");
 
-    g_app_pid = spawn(g_app_path, "10");
-    got = sil_status_wait_for("MODULE_STATE", "READY", 5000);
+    gAppPid = spawn(gAppPath, "10");
+    got = silStatusWaitFor("MODULE_STATE", "READY", 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
         "Expected READY after RESET restored FPGA_TYPE to default");
 }
@@ -300,49 +300,49 @@ void test_sil_commands_register_value_reflected_in_identity_path(void)
  * =========================================================================
  */
 
-void test_sil_rx_lock_sequence_delivers_frame(void)
+void testSilRxLockSequenceDeliversFrame(void)
 {
     uint8_t payload[64];
     for (int i = 0; i < 64; i++) payload[i] = (uint8_t)i;
-    supply_rx_data(payload, sizeof(payload));
+    supplyRXData(payload, sizeof(payload));
 
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before RX scenario could start");
 
     /*
-     * Edge-triggered semantics: the dummy HAL's nstar_hal_gpio_wait_edge()
+     * Edge-triggered semantics: the dummy HAL's nstarHALGPIOWaitEdge()
      * seeds its "previous value" baseline from whatever the GPIO file
      * already contains the FIRST time it is asked to wait on that line.
-     * If DATA_VALID is already 1 by the time the rx_thread starts waiting
+     * If DATA_VALID is already 1 by the time the rxThread starts waiting
      * for its rising edge, no transition is ever observed — exactly like
      * a real GPIO interrupt cannot fire for an edge that happened before
      * the handler was armed.
      *
      * So the sequence here mirrors real hardware: DATA_VALID starts LOW
-     * (the default set by nstar_app_sil's init_gpio_defaults()), we raise
-     * LOCK_DETECT and wait for ACQUIRING (proving the rx_thread is now
+     * (the default set by nstar_app_sil's initGPIODefaults()), we raise
+     * LOCK_DETECT and wait for ACQUIRING (proving the rxThread is now
      * actively waiting on DATA_VALID), and only THEN raise DATA_VALID —
      * guaranteeing a genuine 0->1 transition occurs while observed.
      */
-    set_gpio(SIL_GPIO_LOCK_DETECT_FILE, 1);
+    setGPIO(SIL_GPIO_LOCK_DETECT_FILE, 1);
 
-    int got = sil_status_wait_for("RX_STATE", "ACQUIRING", 3000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "rx_state did not reach ACQUIRING");
+    int got = silStatusWaitFor("RX_STATE", "ACQUIRING", 3000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "rxState did not reach ACQUIRING");
 
-    set_gpio(SIL_GPIO_DATA_VALID_FILE, 1);
+    setGPIO(SIL_GPIO_DATA_VALID_FILE, 1);
 
-    got = sil_status_wait_for("RX_STATE", "LOCKED", 5000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "rx_state did not reach LOCKED");
+    got = silStatusWaitFor("RX_STATE", "LOCKED", 5000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "rxState did not reach LOCKED");
 
-    got = sil_status_wait_for_change("FRAME_RECEIVED_COUNT", "0", 3000);
+    got = silStatusWaitForChange("FRAME_RECEIVED_COUNT", "0", 3000);
     TEST_ASSERT_TRUE_MESSAGE(got, "no frame was received via the RX pipeline");
 
-    sil_status_t snap;
-    TEST_ASSERT_TRUE(sil_status_read(&snap));
-    const char *total = sil_status_get(&snap, "TOTAL_BYTES_RECEIVED");
+    silStatus_t snap;
+    TEST_ASSERT_TRUE(silStatusRead(&snap));
+    const char *total = silStatusGet(&snap, "TOTAL_BYTES_RECEIVED");
     TEST_ASSERT_NOT_NULL(total);
     TEST_ASSERT_EQUAL_INT(64, atoi(total));
 }
@@ -352,85 +352,85 @@ void test_sil_rx_lock_sequence_delivers_frame(void)
  * =========================================================================
  */
 
-void test_sil_fault_assertion_then_recovery(void)
+void testSilFaultAssertionThenRecovery(void)
 {
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before fault scenario could start");
 
     /* Assert FAULT_N (active-low: falling edge = fault) */
-    set_gpio(SIL_GPIO_FAULT_N_FILE, 0);
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 0);
 
-    int got = sil_status_wait_for("MODULE_STATE", "FAULT", 3000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "module_state did not reach FAULT");
+    int got = silStatusWaitFor("MODULE_STATE", "FAULT", 3000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "moduleState did not reach FAULT");
 
     /* Release FAULT_N — N-STAR "self-recovers" */
-    set_gpio(SIL_GPIO_FAULT_N_FILE, 1);
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 1);
 
-    got = sil_status_wait_for("MODULE_STATE", "READY", 5000);
+    got = silStatusWaitFor("MODULE_STATE", "READY", 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
-        "module_state did not return to READY after FAULT_N released");
+        "moduleState did not return to READY after FAULT_N released");
 
-    sil_status_t snap;
-    TEST_ASSERT_TRUE(sil_status_read(&snap));
-    const char *last_fault = sil_status_get(&snap, "LAST_FAULT");
-    TEST_ASSERT_NOT_NULL(last_fault);
-    TEST_ASSERT_EQUAL_STRING("SEL", last_fault);
+    silStatus_t snap;
+    TEST_ASSERT_TRUE(silStatusRead(&snap));
+    const char *lastFault = silStatusGet(&snap, "LAST_FAULT");
+    TEST_ASSERT_NOT_NULL(lastFault);
+    TEST_ASSERT_EQUAL_STRING("SEL", lastFault);
 }
 
 /* =========================================================================
  * Scenario 6 — TX pipeline: full session start/write/stop over real I/O
  * =========================================================================
  *
- * Drives nstar_tx_start() / nstar_tx_write() / nstar_tx_stop() on the
+ * Drives nstarTXStart() / nstarTXWrite() / nstarTXStop() on the
  * REAL nstar_core.c running inside nstar_app_sil, via the app control
  * file. Confirms:
  *   - tx_start succeeds (simulator reports TX_CLOCK_DETECTED=1 by default)
  *   - the dummy HAL's data-clock-state file goes "1" while active
  *   - tx_write delivers exact bytes to the dummy HAL's TX data file
  *   - tx_stop succeeds, clock state file returns to "0"
- *   - on_tx_complete fires with the correct byte count
+ *   - onTXComplete fires with the correct byte count
  */
 
-void test_sil_tx_full_session_delivers_bytes(void)
+void testSilTxFullSessionDeliversBytes(void)
 {
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before TX scenario could start");
 
-    app_control("TX_START=F");   /* NSTAR_TX_RATE_32K = 0x0F */
+    appControl("TX_START=F");   /* NSTAR_TX_RATE_32K = 0x0F */
 
-    int got = sil_status_wait_for("LAST_TX_START_RC", "0", 3000);
+    int got = silStatusWaitFor("LAST_TX_START_RC", "0", 3000);
     TEST_ASSERT_TRUE_MESSAGE(got, "tx_start did not report success (rc=0)");
 
     /* Clock should be running once tx_start succeeded */
-    int clock_state = read_data_clock_state();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(1, clock_state,
+    int clockState = readDataClockState();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, clockState,
         "data clock state file should be '1' after a successful tx_start");
 
-    app_control("TX_WRITE=128");
+    appControl("TX_WRITE=128");
 
-    got = sil_status_wait_for("LAST_TX_WRITE_RC", "0", 3000);
+    got = silStatusWaitFor("LAST_TX_WRITE_RC", "0", 3000);
     TEST_ASSERT_TRUE_MESSAGE(got, "tx_write did not report success (rc=0)");
 
-    app_control("TX_STOP");
+    appControl("TX_STOP");
 
-    got = sil_status_wait_for_change("TX_COMPLETE_COUNT", "0", 3000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_tx_complete did not fire");
+    got = silStatusWaitForChange("TX_COMPLETE_COUNT", "0", 3000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onTXComplete did not fire");
 
-    sil_status_t snap;
-    TEST_ASSERT_TRUE(sil_status_read(&snap));
-    const char *last_bytes = sil_status_get(&snap, "LAST_TX_BYTES");
-    TEST_ASSERT_NOT_NULL(last_bytes);
-    TEST_ASSERT_EQUAL_INT(128, atoi(last_bytes));
+    silStatus_t snap;
+    TEST_ASSERT_TRUE(silStatusRead(&snap));
+    const char *lastBytes = silStatusGet(&snap, "LAST_TX_BYTES");
+    TEST_ASSERT_NOT_NULL(lastBytes);
+    TEST_ASSERT_EQUAL_INT(128, atoi(lastBytes));
 
     /* Clock should be stopped after tx_stop */
-    clock_state = read_data_clock_state();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, clock_state,
+    clockState = readDataClockState();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, clockState,
         "data clock state file should be '0' after tx_stop");
 
     /* Verify the exact bytes landed in the TX data file */
@@ -438,7 +438,7 @@ void test_sil_tx_full_session_delivers_bytes(void)
     for (int i = 0; i < 128; i++) expected[i] = (uint8_t)(i & 0xFF);
 
     uint8_t actual[256];
-    size_t n = read_tx_data(actual, sizeof(actual));
+    size_t n = readTXData(actual, sizeof(actual));
     TEST_ASSERT_EQUAL_UINT_MESSAGE(128, n,
         "TX data file does not contain exactly 128 bytes");
     TEST_ASSERT_EQUAL_MEMORY(expected, actual, 128);
@@ -449,31 +449,31 @@ void test_sil_tx_full_session_delivers_bytes(void)
  * =========================================================================
  *
  * Forces the simulator to report TX_CLOCK_DETECTED=0, so tx_start's
- * internal R 0x40 check fails to see bit 4 set. Confirms nstar_tx_start()
+ * internal R 0x40 check fails to see bit 4 set. Confirms nstarTXStart()
  * returns NSTAR_ERR_NO_CLOCK (-7) rather than silently succeeding, and
  * that the dummy HAL's clock state file is left at "0" (clock was
  * de-asserted again after the failed check, per nstar_core.c's cleanup).
  */
 
-void test_sil_tx_no_clock_detected_fails(void)
+void testSilTxNoClockDetectedFails(void)
 {
-    sim_control("TX_CLOCK_DETECTED=0");
+    simControl("TX_CLOCK_DETECTED=0");
 
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before TX scenario could start");
 
-    app_control("TX_START=F");
+    appControl("TX_START=F");
 
-    int got = sil_status_wait_for("LAST_TX_START_RC", "-7", 3000);
+    int got = silStatusWaitFor("LAST_TX_START_RC", "-7", 3000);
     TEST_ASSERT_TRUE_MESSAGE(got,
         "tx_start did not report NSTAR_ERR_NO_CLOCK (-7) when "
         "simulator has no TX clock");
 
-    int clock_state = read_data_clock_state();
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, clock_state,
+    int clockState = readDataClockState();
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, clockState,
         "clock should be de-asserted again after a failed tx_start");
 }
 
@@ -482,44 +482,44 @@ void test_sil_tx_no_clock_detected_fails(void)
  * =========================================================================
  *
  * Completes a normal lock sequence (as in scenario 4), then drops
- * DATA_VALID and confirms rx_state transitions LOCKED -> LOCK_LOST and
- * on_lock_lost fires, exercising the path Stage 4's unit tests cover
+ * DATA_VALID and confirms rxState transitions LOCKED -> LOCK_LOST and
+ * onLockLost fires, exercising the path Stage 4's unit tests cover
  * in-process but this SIL suite had not yet driven over real GPIO files
  * and a real thread loop.
  */
 
-void test_sil_rx_data_valid_falling_triggers_lock_lost(void)
+void testSilRxDataValidFallingTriggersLockLost(void)
 {
     uint8_t payload[32];
     memset(payload, 0xAB, sizeof(payload));
-    supply_rx_data(payload, sizeof(payload));
+    supplyRXData(payload, sizeof(payload));
 
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before RX scenario could start");
 
-    set_gpio(SIL_GPIO_LOCK_DETECT_FILE, 1);
+    setGPIO(SIL_GPIO_LOCK_DETECT_FILE, 1);
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("RX_STATE", "ACQUIRING", 3000),
-        "rx_state did not reach ACQUIRING");
+        silStatusWaitFor("RX_STATE", "ACQUIRING", 3000),
+        "rxState did not reach ACQUIRING");
 
-    set_gpio(SIL_GPIO_DATA_VALID_FILE, 1);
+    setGPIO(SIL_GPIO_DATA_VALID_FILE, 1);
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("RX_STATE", "LOCKED", 5000),
-        "rx_state did not reach LOCKED");
+        silStatusWaitFor("RX_STATE", "LOCKED", 5000),
+        "rxState did not reach LOCKED");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for_change("LOCK_ACQUIRED_COUNT", "0", 3000),
-        "on_lock_acquired did not fire");
+        silStatusWaitForChange("LOCK_ACQUIRED_COUNT", "0", 3000),
+        "onLockAcquired did not fire");
 
-    /* Drop DATA_VALID — the rx_thread's read loop checks this GPIO
+    /* Drop DATA_VALID — the rxThread's read loop checks this GPIO
      * before every read and should exit to LOCK_LOST. */
-    set_gpio(SIL_GPIO_DATA_VALID_FILE, 0);
+    setGPIO(SIL_GPIO_DATA_VALID_FILE, 0);
 
-    int got = sil_status_wait_for_change("LOCK_LOST_COUNT", "0", 3000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_lock_lost did not fire");
+    int got = silStatusWaitForChange("LOCK_LOST_COUNT", "0", 3000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onLockLost did not fire");
 }
 
 /* =========================================================================
@@ -527,54 +527,54 @@ void test_sil_rx_data_valid_falling_triggers_lock_lost(void)
  *              NSTAR_FRAME_SIZE_BYTES delivers in full
  * =========================================================================
  *
- * Supplies more than one frame's worth of RX data so the rx_thread's
- * inner read loop must call on_frame_received more than once to drain
+ * Supplies more than one frame's worth of RX data so the rxThread's
+ * inner read loop must call onFrameReceived more than once to drain
  * it, proving the chunking logic (and the accumulation of
  * TOTAL_BYTES_RECEIVED across multiple callback invocations) is correct
  * over the real dummy data file, not just in the mock.
  */
 
-void test_sil_rx_multi_chunk_session_accumulates_bytes(void)
+void testSilRxMultiChunkSessionAccumulatesBytes(void)
 {
     size_t total = (size_t)NSTAR_FRAME_SIZE_BYTES + 512;
     uint8_t *payload = malloc(total);
     TEST_ASSERT_NOT_NULL(payload);
     for (size_t i = 0; i < total; i++) payload[i] = (uint8_t)(i & 0xFF);
-    supply_rx_data(payload, total);
+    supplyRXData(payload, total);
     free(payload);
 
-    g_app_pid = spawn(g_app_path, "10");
+    gAppPid = spawn(gAppPath, "10");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before RX scenario could start");
 
-    set_gpio(SIL_GPIO_LOCK_DETECT_FILE, 1);
+    setGPIO(SIL_GPIO_LOCK_DETECT_FILE, 1);
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("RX_STATE", "ACQUIRING", 3000),
-        "rx_state did not reach ACQUIRING");
+        silStatusWaitFor("RX_STATE", "ACQUIRING", 3000),
+        "rxState did not reach ACQUIRING");
 
-    set_gpio(SIL_GPIO_DATA_VALID_FILE, 1);
+    setGPIO(SIL_GPIO_DATA_VALID_FILE, 1);
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("RX_STATE", "LOCKED", 5000),
-        "rx_state did not reach LOCKED");
+        silStatusWaitFor("RX_STATE", "LOCKED", 5000),
+        "rxState did not reach LOCKED");
 
     /* Wait until TOTAL_BYTES_RECEIVED reaches the full amount — the
-     * rx_thread will need at least 2 calls to on_frame_received since
+     * rxThread will need at least 2 calls to onFrameReceived since
      * the payload exceeds NSTAR_FRAME_SIZE_BYTES. */
-    char expected_str[32];
-    snprintf(expected_str, sizeof(expected_str), "%zu", total);
+    char expectedStr[32];
+    snprintf(expectedStr, sizeof(expectedStr), "%zu", total);
 
-    int got = sil_status_wait_for("TOTAL_BYTES_RECEIVED", expected_str, 5000);
+    int got = silStatusWaitFor("TOTAL_BYTES_RECEIVED", expectedStr, 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
         "TOTAL_BYTES_RECEIVED did not reach the full multi-chunk payload size");
 
-    sil_status_t snap;
-    TEST_ASSERT_TRUE(sil_status_read(&snap));
-    const char *frame_count = sil_status_get(&snap, "FRAME_RECEIVED_COUNT");
-    TEST_ASSERT_NOT_NULL(frame_count);
-    TEST_ASSERT_TRUE_MESSAGE(atoi(frame_count) >= 2,
-        "expected at least 2 on_frame_received calls for a multi-chunk payload");
+    silStatus_t snap;
+    TEST_ASSERT_TRUE(silStatusRead(&snap));
+    const char *frameCount = silStatusGet(&snap, "FRAME_RECEIVED_COUNT");
+    TEST_ASSERT_NOT_NULL(frameCount);
+    TEST_ASSERT_TRUE_MESSAGE(atoi(frameCount) >= 2,
+        "expected at least 2 onFrameReceived calls for a multi-chunk payload");
 }
 
 /* =========================================================================
@@ -584,7 +584,7 @@ void test_sil_rx_multi_chunk_session_accumulates_bytes(void)
  *
  * Sets a hot PA_TEMP_RAW on the simulator BEFORE the app starts, so the
  * health thread's first 30-second poll cycle already sees an
- * over-temperature reading on its very first nstar_health_read() call.
+ * over-temperature reading on its very first nstarHealthRead() call.
  * This is the one scenario that genuinely needs to wait out the real
  * NSTAR_HEALTH_POLL_INTERVAL_MS (30s, unscaled in the dummy HAL), so its
  * timeout budget is generous (40s) rather than the ~3-5s used elsewhere.
@@ -593,37 +593,37 @@ void test_sil_rx_multi_chunk_session_accumulates_bytes(void)
  * NSTAR_PA_TEMP_WARN_CELSIUS (85C).
  */
 
-void test_sil_health_overtemp_drives_fault_and_stops_tx(void)
+void testSilHealthOvertempDrivesFaultAndStopsTx(void)
 {
-    sim_control("PA_TEMP_RAW=2300");
+    simControl("PA_TEMP_RAW=2300");
 
-    g_app_pid = spawn(g_app_path, "45");
+    gAppPid = spawn(gAppPath, "45");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before health scenario could start");
 
     /* Start a TX session so we can also confirm the health thread stops
-     * it proactively, per nstar_core.c's health_thread_func() logic. */
-    app_control("TX_START=F");
+     * it proactively, per nstar_core.c's healthThreadFunc() logic. */
+    appControl("TX_START=F");
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("LAST_TX_START_RC", "0", 3000),
+        silStatusWaitFor("LAST_TX_START_RC", "0", 3000),
         "tx_start did not succeed ahead of the thermal scenario");
 
-    /* The health thread's first poll happens ~30s after nstar_init();
+    /* The health thread's first poll happens ~30s after nstarInit();
      * give it a generous margin beyond that real interval. */
-    int got = sil_status_wait_for_change("FAULT_COUNT", "0", 40000);
+    int got = silStatusWaitForChange("FAULT_COUNT", "0", 40000);
     TEST_ASSERT_TRUE_MESSAGE(got,
-        "on_fault(TEMPERATURE) did not fire within the health poll window");
+        "onFault(TEMPERATURE) did not fire within the health poll window");
 
-    sil_status_t snap;
-    TEST_ASSERT_TRUE(sil_status_read(&snap));
-    const char *last_fault = sil_status_get(&snap, "LAST_FAULT");
-    TEST_ASSERT_NOT_NULL(last_fault);
-    TEST_ASSERT_EQUAL_STRING("TEMPERATURE", last_fault);
+    silStatus_t snap;
+    TEST_ASSERT_TRUE(silStatusRead(&snap));
+    const char *lastFault = silStatusGet(&snap, "LAST_FAULT");
+    TEST_ASSERT_NOT_NULL(lastFault);
+    TEST_ASSERT_EQUAL_STRING("TEMPERATURE", lastFault);
 
     /* TX should have been stopped proactively before the fault fired */
-    const char *tx_complete = sil_status_get(&snap, "TX_COMPLETE_COUNT");
+    const char *tx_complete = silStatusGet(&snap, "TX_COMPLETE_COUNT");
     TEST_ASSERT_NOT_NULL(tx_complete);
     TEST_ASSERT_TRUE_MESSAGE(atoi(tx_complete) >= 1,
         "expected the health thread to have stopped the active TX session");
@@ -635,7 +635,7 @@ void test_sil_health_overtemp_drives_fault_and_stops_tx(void)
  * =========================================================================
  *
  * Asserts FAULT_N and deliberately holds it LOW past
- * FAULT_RECOVERY_TIMEOUT_MS (5s), forcing fault_thread_func() down the
+ * FAULT_RECOVERY_TIMEOUT_MS (5s), forcing faultThreadFunc() down the
  * "N-STAR did not self-recover" branch: it asserts RESET_N low for
  * FAULT_RESET_HOLD_MS (100ms), releases it, then waits a SECOND 5s
  * window for FAULT_N to rise. We release FAULT_N only after that first
@@ -651,22 +651,22 @@ void test_sil_health_overtemp_drives_fault_and_stops_tx(void)
  * well above 5s, which is only possible via the hard-reset branch.
  */
 
-void test_sil_fault_no_self_recovery_forces_hardware_reset(void)
+void testSilFaultNoSelfRecoveryForcesHardwareReset(void)
 {
-    g_app_pid = spawn(g_app_path, "20");
+    gAppPid = spawn(gAppPath, "20");
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "READY", 5000),
+        silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before fault scenario could start");
 
     struct timespec t0;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
-    set_gpio(SIL_GPIO_FAULT_N_FILE, 0);   /* assert fault */
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 0);   /* assert fault */
 
     TEST_ASSERT_TRUE_MESSAGE(
-        sil_status_wait_for("MODULE_STATE", "FAULT", 2000),
-        "module_state did not reach FAULT");
+        silStatusWaitFor("MODULE_STATE", "FAULT", 2000),
+        "moduleState did not reach FAULT");
 
     /*
      * Hold FAULT_N low for longer than FAULT_RECOVERY_TIMEOUT_MS (5s) so
@@ -677,16 +677,16 @@ void test_sil_fault_no_self_recovery_forces_hardware_reset(void)
     struct timespec hold = { 6, 0 };   /* 6s > 5s timeout, deliberate margin */
     nanosleep(&hold, NULL);
 
-    set_gpio(SIL_GPIO_FAULT_N_FILE, 1);   /* release fault */
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 1);   /* release fault */
 
-    int got = sil_status_wait_for("MODULE_STATE", "READY", 8000);
+    int got = silStatusWaitFor("MODULE_STATE", "READY", 8000);
     TEST_ASSERT_TRUE_MESSAGE(got,
-        "module_state did not return to READY after the hardware-reset "
+        "moduleState did not return to READY after the hardware-reset "
         "recovery path");
 
     struct timespec t1;
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    long elapsed_ms = (t1.tv_sec - t0.tv_sec) * 1000 +
+    long elapsedMS = (t1.tv_sec - t0.tv_sec) * 1000 +
                       (t1.tv_nsec - t0.tv_nsec) / 1000000;
 
     /*
@@ -697,20 +697,20 @@ void test_sil_fault_no_self_recovery_forces_hardware_reset(void)
      * margin against scheduling jitter while still clearly
      * distinguishing this path from self-recovery.
      */
-    TEST_ASSERT_TRUE_MESSAGE(elapsed_ms >= 4500,
+    TEST_ASSERT_TRUE_MESSAGE(elapsedMS >= 4500,
         "recovery completed too quickly to have gone through the "
         "5s self-recovery timeout and hardware-reset branch");
 
-    sil_status_t snap;
-    TEST_ASSERT_TRUE(sil_status_read(&snap));
-    const char *last_fault = sil_status_get(&snap, "LAST_FAULT");
-    TEST_ASSERT_NOT_NULL(last_fault);
-    TEST_ASSERT_EQUAL_STRING("SEL", last_fault);
+    silStatus_t snap;
+    TEST_ASSERT_TRUE(silStatusRead(&snap));
+    const char *lastFault = silStatusGet(&snap, "LAST_FAULT");
+    TEST_ASSERT_NOT_NULL(lastFault);
+    TEST_ASSERT_EQUAL_STRING("SEL", lastFault);
 
     /* RESET_N must be released (HIGH) again by the time recovery completed */
-    char reset_path[512];
-    sil_path(reset_path, sizeof(reset_path), SIL_GPIO_RESET_N_FILE);
-    FILE *rf = fopen(reset_path, "r");
+    char resetPath[512];
+    silPath(resetPath, sizeof(resetPath), SIL_GPIO_RESET_N_FILE);
+    FILE *rf = fopen(resetPath, "r");
     TEST_ASSERT_NOT_NULL(rf);
     char rbuf[8] = {0};
     fread(rbuf, 1, sizeof(rbuf) - 1, rf);
@@ -731,22 +731,22 @@ int main(int argc, char **argv)
             argv[0]);
         return 1;
     }
-    snprintf(g_sim_path, sizeof(g_sim_path), "%s", argv[1]);
-    snprintf(g_app_path, sizeof(g_app_path), "%s", argv[2]);
+    snprintf(gSimPath, sizeof(gSimPath), "%s", argv[1]);
+    snprintf(gAppPath, sizeof(gAppPath), "%s", argv[2]);
 
     UNITY_BEGIN();
 
-    RUN_TEST(test_sil_fsm_startup_reaches_ready);
-    RUN_TEST(test_sil_fsm_fpga_type_mismatch_drives_fault);
-    RUN_TEST(test_sil_commands_register_value_reflected_in_identity_path);
-    RUN_TEST(test_sil_rx_lock_sequence_delivers_frame);
-    RUN_TEST(test_sil_fault_assertion_then_recovery);
-    RUN_TEST(test_sil_tx_full_session_delivers_bytes);
-    RUN_TEST(test_sil_tx_no_clock_detected_fails);
-    RUN_TEST(test_sil_rx_data_valid_falling_triggers_lock_lost);
-    RUN_TEST(test_sil_rx_multi_chunk_session_accumulates_bytes);
-    RUN_TEST(test_sil_health_overtemp_drives_fault_and_stops_tx);
-    RUN_TEST(test_sil_fault_no_self_recovery_forces_hardware_reset);
+    RUN_TEST(testSilFsmStartupReachesReady);
+    RUN_TEST(testSilFsmFpgaTypeMismatchDrivesFault);
+    RUN_TEST(testSilCommandsRegisterValueReflectedInIdentityPath);
+    RUN_TEST(testSilRxLockSequenceDeliversFrame);
+    RUN_TEST(testSilFaultAssertionThenRecovery);
+    RUN_TEST(testSilTxFullSessionDeliversBytes);
+    RUN_TEST(testSilTxNoClockDetectedFails);
+    RUN_TEST(testSilRxDataValidFallingTriggersLockLost);
+    RUN_TEST(testSilRxMultiChunkSessionAccumulatesBytes);
+    RUN_TEST(testSilHealthOvertempDrivesFaultAndStopsTx);
+    RUN_TEST(testSilFaultNoSelfRecoveryForcesHardwareReset);
 
     return UNITY_END();
 }

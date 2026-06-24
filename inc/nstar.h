@@ -171,7 +171,7 @@ typedef enum {
     NSTAR_ERR_THERMAL       = -10,
     NSTAR_ERR_BUSY          = -11,
     NSTAR_ERR_NOT_READY     = -12,  /**< Module not in READY state.            */
-} nstar_result_t;
+} nstarResult_t;
 
 /* =========================================================================
  * ENUMERATIONS
@@ -182,28 +182,28 @@ typedef enum {
     NSTAR_TX_STANDBY    = 0,
     NSTAR_TX_MODULATION = 1,
     NSTAR_TX_CW         = 2,
-} nstar_tx_mode_t;
+} nstarTXMode_t;
 
 typedef enum {
     NSTAR_RX_IDLE      = 0,
     NSTAR_RX_ACQUIRING = 1,
     NSTAR_RX_LOCKED    = 2,
     NSTAR_RX_LOCK_LOST = 3,
-} nstar_rx_state_t;
+} nstarRXState_t;
 
 /**
  * Module-level FSM state — tracks the overall lifecycle of the interface,
- * independent of the RX sub-state-machine (nstar_rx_state_t) and TX
+ * independent of the RX sub-state-machine (nstarRXState_t) and TX
  * activity flag.
  *
  * Legal transitions:
- *   UNINIT        -> INITIALISING   (nstar_init() called)
+ *   UNINIT        -> INITIALISING   (nstarInit() called)
  *   INITIALISING  -> STARTING       (threads spawned, startup about to run)
  *   STARTING      -> READY          (startup_sequence succeeds)
  *   STARTING      -> FAULT          (startup_sequence fails)
  *   READY         -> FAULT          (FAULT_N asserted)
  *   FAULT         -> STARTING       (recovery: re-running startup_sequence)
- *   READY|FAULT   -> SHUTTING_DOWN  (nstar_deinit() called)
+ *   READY|FAULT   -> SHUTTING_DOWN  (nstarDeinit() called)
  *
  * TX, RX configuration, and register read/write entry points require
  * NSTAR_MODULE_READY. Calls made during FAULT or STARTING are rejected
@@ -216,18 +216,18 @@ typedef enum {
     NSTAR_MODULE_READY         = 3,
     NSTAR_MODULE_FAULT         = 4,
     NSTAR_MODULE_SHUTTING_DOWN = 5,
-} nstar_module_state_t;
+} nstarModuleState_t;
 
 typedef enum {
     NSTAR_FAULT_SEL         = 0,
     NSTAR_FAULT_OVERCURRENT = 1,
     NSTAR_FAULT_TEMPERATURE = 2,
-} nstar_fault_source_t;
+} nstarFaultSource_t;
 
 typedef enum {
     NSTAR_GPIO_EDGE_RISING  = 0,
     NSTAR_GPIO_EDGE_FALLING = 1,
-} nstar_gpio_edge_t;
+} nstarGPIOEdge_t;
 
 /** RX data rate codes — PCM/PM demodulation (IRD Table 10). */
 typedef enum {
@@ -237,7 +237,7 @@ typedef enum {
     NSTAR_RX_RATE_32K  = 0x0F,
     NSTAR_RX_RATE_16K  = 0x1F,  /* Lumos EM default */
     NSTAR_RX_RATE_8K   = 0x3F,
-} nstar_rx_rate_code_t;
+} nstarRXRateCode_t;
 
 /** TX data rate codes (OPT-C31-TDF active on Lumos EM). */
 typedef enum {
@@ -247,7 +247,7 @@ typedef enum {
     NSTAR_TX_RATE_32K  = 0x0F,  /* Lumos EM default */
     NSTAR_TX_RATE_16K  = 0x1F,
     NSTAR_TX_RATE_8K   = 0x3F,
-} nstar_tx_rate_code_t;
+} nstarTXRateCode_t;
 
 /* =========================================================================
  * STRUCTS
@@ -255,91 +255,91 @@ typedef enum {
  */
 
 typedef struct {
-    int uart_fd;
-    int gpio_lock_detect;
-    int gpio_data_valid;
-    int gpio_fault_n;
-    int gpio_reset_n;
-    int data_fd;           /* OPEN POINT: physical interface TBD */
-} nstar_config_t;
+    int uartFd;
+    int gpioLockDetect;
+    int gpioDataValid;
+    int gpioFaultN;
+    int gpioResetN;
+    int dataFd;           /* OPEN POINT: physical interface TBD */
+} nstarConfig_t;
 
 typedef struct {
-    bool    carrier_detect;
-    bool    carrier_lock;
-    bool    bit_lock;
-    bool    data_valid;    /* Only consume RX data when this is true */
-    uint8_t sweep_state;
+    bool    carrierDetect;
+    bool    carrierLock;
+    bool    bitLock;
+    bool    dataValid;    /* Only consume RX data when this is true */
+    uint8_t sweepState;
     uint8_t raw;
-} nstar_rx_status_t;
+} nstarRXStatus_t;
 
 typedef struct {
-    nstar_tx_mode_t current_mode;
-    bool            clock_detected;
-    uint8_t         config_set;
+    nstarTXMode_t currentMode;
+    bool            clockDetected;
+    uint8_t         configSet;
     uint8_t         raw;
-} nstar_tx_status_t;
+} nstarTXStatus_t;
 
 typedef struct {
-    float    pa_temp_celsius;
-    float    bb_temp_celsius;
-    bool     fault_active;
-    uint16_t pa_adc_raw;
-    uint16_t bb_adc_raw;
-} nstar_health_t;
+    float    paTempCelsius;
+    float    bbTempCelsius;
+    bool     faultActive;
+    uint16_t paAdcRaw;
+    uint16_t bbAdcRaw;
+} nstarHealth_t;
 
 typedef struct {
-    uint8_t  fpga_version;
-    uint8_t  fpga_build;
-    uint8_t  hw_year;
-    uint8_t  hw_week;
-    uint16_t hw_order;
-    uint8_t  fpga_type;
-    uint16_t fpga_options;
-} nstar_identity_t;
+    uint8_t  fpgaVersion;
+    uint8_t  fpgaBuild;
+    uint8_t  hwYear;
+    uint8_t  hwWeek;
+    uint16_t hwOrder;
+    uint8_t  fpgaType;
+    uint16_t fpgaOptions;
+} nstarIdentity_t;
 
 typedef struct {
-    float   rssi_dbm;
-    float   eb_no_db;
-    int32_t freq_shift_hz;
-} nstar_link_quality_t;
+    float   rssiDBM;
+    float   ebNoDB;
+    int32_t freqShiftHz;
+} nstarLinkQuality_t;
 
 /**
- * Application callbacks registered at nstar_init().
+ * Application callbacks registered at nstarInit().
  * Called from internal threads — do NOT call nstar_* functions inside them.
  */
 typedef struct {
-    void (*on_frame_received)(const uint8_t *buf, size_t len);
-    void (*on_tx_complete)(size_t bytes_sent);
-    void (*on_fault)(nstar_fault_source_t source);
-    void (*on_lock_acquired)(void);
-    void (*on_lock_lost)(void);
-} nstar_callbacks_t;
+    void (*onFrameReceived)(const uint8_t *buf, size_t len);
+    void (*onTXComplete)(size_t bytesSent);
+    void (*onFault)(nstarFaultSource_t source);
+    void (*onLockAcquired)(void);
+    void (*onLockLost)(void);
+} nstarCallbacks_t;
 
-/** Opaque context handle returned by nstar_init(). */
-typedef struct nstar_ctx nstar_ctx_t;
+/** Opaque context handle returned by nstarInit(). */
+typedef struct nstarCtx nstarCtx_t;
 
 /* =========================================================================
  * HAL PROTOTYPES  (implemented in hal/ or src/nstar_hal_mock.c)
  * =========================================================================
  */
 
-ssize_t        nstar_hal_uart_write(int fd, const uint8_t *buf, size_t len);
-ssize_t        nstar_hal_uart_read(int fd, uint8_t *buf, size_t len,
-                                    uint32_t timeout_ms);
-nstar_result_t nstar_hal_gpio_wait_edge(int fd, nstar_gpio_edge_t edge,
-                                         uint32_t timeout_ms);
-int            nstar_hal_gpio_read(int fd);
-nstar_result_t nstar_hal_gpio_write(int fd, int value);
-ssize_t        nstar_hal_data_write(int fd, const uint8_t *buf, size_t len);
-ssize_t        nstar_hal_data_read(int fd, uint8_t *buf, size_t len);
+ssize_t        nstarHALUARTWrite(int fd, const uint8_t *buf, size_t len);
+ssize_t        nstarHALUARTRead(int fd, uint8_t *buf, size_t len,
+                                    uint32_t timeoutMs);
+nstarResult_t nstarHALGPIOWaitEdge(int fd, nstarGPIOEdge_t edge,
+                                         uint32_t timeoutMs);
+int            nstarHALGPIORead(int fd);
+nstarResult_t nstarHALGPIOWrite(int fd, int value);
+ssize_t        nstarHALDataWrite(int fd, const uint8_t *buf, size_t len);
+ssize_t        nstarHALDataRead(int fd, uint8_t *buf, size_t len);
 
 /**
  * Assert the TX clock on CLK_TX pins.
- * Called before nstar_hal_data_write() and before issuing TX_MODE=Modulation.
+ * Called before nstarHALDataWrite() and before issuing TX_MODE=Modulation.
  * OPEN POINT: implementation depends on data interface (SPI / other).
  * @return NSTAR_OK or NSTAR_ERR_HAL.
  */
-nstar_result_t nstar_hal_data_clock_start(int fd);
+nstarResult_t nstarHALDataClockStart(int fd);
 
 /**
  * De-assert the TX clock on CLK_TX pins.
@@ -347,10 +347,10 @@ nstar_result_t nstar_hal_data_clock_start(int fd);
  * OPEN POINT: implementation depends on data interface.
  * @return NSTAR_OK or NSTAR_ERR_HAL.
  */
-nstar_result_t nstar_hal_data_clock_stop(int fd);
+nstarResult_t nstarHALDataClockStop(int fd);
 
-void           nstar_hal_sleep_ms(uint32_t ms);
-uint64_t       nstar_hal_timestamp_ms(void);
+void           nstarHALSleepMS(uint32_t ms);
+uint64_t       nstarHALTimestampMS(void);
 
 /* =========================================================================
  * FRAME CODEC  (src/nstar_frame.c)
@@ -360,9 +360,9 @@ uint64_t       nstar_hal_timestamp_ms(void);
 /**
  * Compute CRC16-XMODEM.
  * CRC input for a UART frame includes '<' (IRD §3.3.2.1).
- * Verification: nstar_crc16_xmodem("<V00:", 5) == 0x68D3
+ * Verification: nstarCRC16XMODEM("<V00:", 5) == 0x68D3
  */
-uint16_t nstar_crc16_xmodem(const uint8_t *data, size_t len);
+uint16_t nstarCRC16XMODEM(const uint8_t *data, size_t len);
 
 /**
  * Encode a UART command frame.
@@ -370,118 +370,118 @@ uint16_t nstar_crc16_xmodem(const uint8_t *data, size_t len);
  * CRC input = '<' + CMD_ID + DATA_SIZE + ':' + DATA
  * Sep2 ':', CRC field, and '>' are excluded from CRC input.
  *
- * @param cmd_id    Uppercase command letter ('R','W','V','E','C').
- * @param data_in   Raw payload bytes. NULL when data_len == 0.
- * @param data_len  Number of raw bytes in data_in.
- * @param buf_out   Output buffer, must be >= NSTAR_FRAME_BUF_MAX bytes.
- * @param len_out   Written with the number of bytes placed in buf_out.
+ * @param cmdId    Uppercase command letter ('R','W','V','E','C').
+ * @param dataIn   Raw payload bytes. NULL when dataLen == 0.
+ * @param dataLen  Number of raw bytes in dataIn.
+ * @param bufOut   Output buffer, must be >= NSTAR_FRAME_BUF_MAX bytes.
+ * @param lenOut   Written with the number of bytes placed in bufOut.
  * @return          NSTAR_OK or NSTAR_ERR_PARAM.
  */
-nstar_result_t nstar_frame_encode(char cmd_id,
-                                   const uint8_t *data_in, size_t data_len,
-                                   uint8_t *buf_out, size_t *len_out);
+nstarResult_t nstarFrameEncode(char cmdId,
+                                   const uint8_t *dataIn, size_t dataLen,
+                                   uint8_t *bufOut, size_t *lenOut);
 
 /**
  * Decode a received UART response frame.
  *
  * @param buf           Raw bytes including '<' and '>'.
  * @param len           Number of bytes in buf.
- * @param cmd_id_out    Set to the CMD_ID character.
- * @param data_out      Decoded payload (must be >= NSTAR_FRAME_BUF_MAX/2 bytes).
- * @param data_len_out  Set to number of decoded bytes.
+ * @param cmdIdOut    Set to the CMD_ID character.
+ * @param dataOut      Decoded payload (must be >= NSTAR_FRAME_BUF_MAX/2 bytes).
+ * @param dataLenOut  Set to number of decoded bytes.
  * @return  NSTAR_OK, NSTAR_ERR_BAD_FRAME, or NSTAR_ERR_CRC.
  */
-nstar_result_t nstar_frame_decode(const uint8_t *buf, size_t len,
-                                   char *cmd_id_out,
-                                   uint8_t *data_out, size_t *data_len_out);
+nstarResult_t nstarFrameDecode(const uint8_t *buf, size_t len,
+                                   char *cmdIdOut,
+                                   uint8_t *dataOut, size_t *dataLenOut);
 
 /* =========================================================================
  * PUBLIC API — LIFECYCLE  (src/nstar_core.c)
  * =========================================================================
  */
 
-nstar_result_t nstar_init(const nstar_config_t *config,
-                           const nstar_callbacks_t *callbacks,
-                           nstar_ctx_t **ctx_out);
+nstarResult_t nstarInit(const nstarConfig_t *config,
+                           const nstarCallbacks_t *callbacks,
+                           nstarCtx_t **ctxOut);
 
-void           nstar_deinit(nstar_ctx_t *ctx);
+void           nstarDeinit(nstarCtx_t *ctx);
 
-nstar_result_t nstar_startup_sequence(nstar_ctx_t *ctx);
+nstarResult_t nstarStartupSequence(nstarCtx_t *ctx);
 
 /**
  * Return the current module-level FSM state.
  * Thread-safe — may be called from any thread including callbacks.
  */
-nstar_module_state_t nstar_get_module_state(nstar_ctx_t *ctx);
+nstarModuleState_t nstarGetModuleState(nstarCtx_t *ctx);
 
 /* =========================================================================
  * PUBLIC API — REGISTER ACCESS  (src/nstar_core.c)
  * =========================================================================
  */
 
-nstar_result_t nstar_reg_read(nstar_ctx_t *ctx, uint8_t addr,
-                               uint8_t *val_out);
-nstar_result_t nstar_reg_write(nstar_ctx_t *ctx, uint8_t addr, uint8_t val);
-nstar_result_t nstar_reg_read_multi(nstar_ctx_t *ctx, uint8_t start_addr,
-                                     uint8_t n, uint8_t *buf_out);
+nstarResult_t nstarRegRead(nstarCtx_t *ctx, uint8_t addr,
+                               uint8_t *valOut);
+nstarResult_t nstarRegWrite(nstarCtx_t *ctx, uint8_t addr, uint8_t val);
+nstarResult_t nstarRegReadMulti(nstarCtx_t *ctx, uint8_t startAddr,
+                                     uint8_t n, uint8_t *bufOut);
 
 /* =========================================================================
  * PUBLIC API — NAMED COMMANDS  (src/nstar_core.c)
  * =========================================================================
  */
 
-nstar_result_t nstar_cmd_read_identity(nstar_ctx_t *ctx,
-                                        nstar_identity_t *out);
-nstar_result_t nstar_cmd_read_all_rx_status(nstar_ctx_t *ctx,
-                                             uint8_t *raw_out,
-                                             size_t *len_out);
-nstar_result_t nstar_cmd_reset(nstar_ctx_t *ctx);
+nstarResult_t nstarCMDReadIdentity(nstarCtx_t *ctx,
+                                        nstarIdentity_t *out);
+nstarResult_t nstarCMDReadAllRXStatus(nstarCtx_t *ctx,
+                                             uint8_t *rawOut,
+                                             size_t *lenOut);
+nstarResult_t nstarCMDReset(nstarCtx_t *ctx);
 
 /* =========================================================================
  * PUBLIC API — TX  (src/nstar_core.c)
  * =========================================================================
  */
 
-nstar_result_t nstar_tx_start(nstar_ctx_t *ctx,
-                               nstar_tx_rate_code_t rate_code);
-nstar_result_t nstar_tx_write(nstar_ctx_t *ctx,
+nstarResult_t nstarTXStart(nstarCtx_t *ctx,
+                               nstarTXRateCode_t rateCode);
+nstarResult_t nstarTXWrite(nstarCtx_t *ctx,
                                const uint8_t *buf, size_t len);
-nstar_result_t nstar_tx_stop(nstar_ctx_t *ctx);
-nstar_result_t nstar_tx_get_status(nstar_ctx_t *ctx,
-                                    nstar_tx_status_t *out);
+nstarResult_t nstarTXStop(nstarCtx_t *ctx);
+nstarResult_t nstarTXGetStatus(nstarCtx_t *ctx,
+                                    nstarTXStatus_t *out);
 
 /* =========================================================================
  * PUBLIC API — RX  (src/nstar_core.c)
  * =========================================================================
  */
 
-nstar_result_t nstar_rx_configure(nstar_ctx_t *ctx,
-                                   nstar_rx_rate_code_t rate_code);
-nstar_result_t nstar_rx_get_status(nstar_ctx_t *ctx,
-                                    nstar_rx_status_t *out);
-nstar_result_t nstar_rx_get_link_quality(nstar_ctx_t *ctx,
-                                          nstar_link_quality_t *out);
+nstarResult_t nstarRXConfigure(nstarCtx_t *ctx,
+                                   nstarRXRateCode_t rateCode);
+nstarResult_t nstarRXGetStatus(nstarCtx_t *ctx,
+                                    nstarRXStatus_t *out);
+nstarResult_t nstarRXGetLinkQuality(nstarCtx_t *ctx,
+                                          nstarLinkQuality_t *out);
 
 /**
  * Return the current RX sub-state-machine state, as tracked by the
  * RX thread (IDLE / ACQUIRING / LOCKED / LOCK_LOST).
  * Thread-safe — may be called from any thread.
  */
-nstar_rx_state_t nstar_rx_get_state(nstar_ctx_t *ctx);
+nstarRXState_t nstarRXGetState(nstarCtx_t *ctx);
 
 /**
  * Retrieve the FPGA identity cached during the most recent successful
- * nstar_startup_sequence() call. Returns NSTAR_ERR_NOT_READY if startup
+ * nstarStartupSequence() call. Returns NSTAR_ERR_NOT_READY if startup
  * has never completed successfully.
  */
-nstar_result_t nstar_get_identity(nstar_ctx_t *ctx, nstar_identity_t *out);
+nstarResult_t nstarGetIdentity(nstarCtx_t *ctx, nstarIdentity_t *out);
 
 /* =========================================================================
  * PUBLIC API — HEALTH  (src/nstar_core.c)
  * =========================================================================
  */
 
-nstar_result_t nstar_health_read(nstar_ctx_t *ctx, nstar_health_t *out);
+nstarResult_t nstarHealthRead(nstarCtx_t *ctx, nstarHealth_t *out);
 
 #ifdef __cplusplus
 }

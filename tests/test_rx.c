@@ -1,20 +1,20 @@
 /**
- * @file  test_rx.c
+ * @file  testRx.c
  * @brief Stage 4 unit tests — RX pipeline.
  *
  * Tests cover:
- *   - nstar_rx_configure()
- *   - nstar_rx_get_status() register decode
- *   - nstar_rx_get_link_quality() multi-register decode
- *   - rx_thread_func() state machine via GPIO edge sequences
+ *   - nstarRXConfigure()
+ *   - nstarRXGetStatus() register decode
+ *   - nstarRXGetLinkQuality() multi-register decode
+ *   - rxThreadFunc() state machine via GPIO edge sequences
  *
  * Threading notes:
- *   nstar_init() now spawns the rx_thread, fault_thread, and health_thread.
- *   Tests that exercise the rx_thread queue GPIO edges via the mock and then
- *   wait for the on_frame_received / on_lock_acquired / on_lock_lost
+ *   nstarInit() now spawns the rxThread, faultThread, and healthThread.
+ *   Tests that exercise the rxThread queue GPIO edges via the mock and then
+ *   wait for the onFrameReceived / onLockAcquired / onLockLost
  *   callbacks using a pthread_cond_t.
  *
- *   setUp() calls nstar_init() which starts all three threads.
+ *   setUp() calls nstarInit() which starts all three threads.
  *   The fault and health threads block on GPIO edges / sleep — they will
  *   not interfere with RX tests because their GPIO fds differ.
  */
@@ -38,88 +38,88 @@ typedef struct {
     pthread_cond_t  cv;
     int             fired;
     /* captured callback data */
-    uint8_t         frame_buf[NSTAR_FRAME_SIZE_BYTES];
-    size_t          frame_len;
-    int             lock_acquired;
-    int             lock_lost;
-    nstar_fault_source_t fault_source;
-    int             fault_fired;
-} cb_sync_t;
+    uint8_t         frameBuf[NSTAR_FRAME_SIZE_BYTES];
+    size_t          frameLen;
+    int             lockAcquired;
+    int             lockLost;
+    nstarFaultSource_t faultSource;
+    int             faultFired;
+} cbSync_t;
 
-static cb_sync_t g_sync;
+static cbSync_t gSync;
 
-static void sync_init(void)
+static void syncInit(void)
 {
-    pthread_mutex_init(&g_sync.mu, NULL);
-    pthread_cond_init(&g_sync.cv, NULL);
-    memset(&g_sync.frame_buf, 0, sizeof(g_sync.frame_buf));
-    g_sync.fired         = 0;
-    g_sync.frame_len     = 0;
-    g_sync.lock_acquired = 0;
-    g_sync.lock_lost     = 0;
-    g_sync.fault_fired   = 0;
+    pthread_mutex_init(&gSync.mu, NULL);
+    pthread_cond_init(&gSync.cv, NULL);
+    memset(&gSync.frameBuf, 0, sizeof(gSync.frameBuf));
+    gSync.fired         = 0;
+    gSync.frameLen     = 0;
+    gSync.lockAcquired = 0;
+    gSync.lockLost     = 0;
+    gSync.faultFired   = 0;
 }
 
-static void sync_destroy(void)
+static void syncDestroy(void)
 {
-    pthread_mutex_destroy(&g_sync.mu);
-    pthread_cond_destroy(&g_sync.cv);
+    pthread_mutex_destroy(&gSync.mu);
+    pthread_cond_destroy(&gSync.cv);
 }
 
-/** Wait up to timeout_ms for g_sync.fired to become non-zero. */
-static int sync_wait(int timeout_ms)
+/** Wait up to timeoutMs for gSync.fired to become non-zero. */
+static int syncWait(int timeoutMs)
 {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec  += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000L;
+    ts.tv_sec  += timeoutMs / 1000;
+    ts.tv_nsec += (timeoutMs % 1000) * 1000000L;
     if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
 
-    pthread_mutex_lock(&g_sync.mu);
+    pthread_mutex_lock(&gSync.mu);
     int rc = 0;
-    while (!g_sync.fired && rc == 0) {
-        rc = pthread_cond_timedwait(&g_sync.cv, &g_sync.mu, &ts);
+    while (!gSync.fired && rc == 0) {
+        rc = pthread_cond_timedwait(&gSync.cv, &gSync.mu, &ts);
     }
-    int result = g_sync.fired;
-    pthread_mutex_unlock(&g_sync.mu);
+    int result = gSync.fired;
+    pthread_mutex_unlock(&gSync.mu);
     return result;
 }
 
 /**
- * Wait up to timeout_ms specifically for on_frame_received to fire.
- * on_lock_acquired and on_lock_lost also call sync_signal() and set the
- * generic g_sync.fired flag, so a plain sync_wait() can return early on
+ * Wait up to timeoutMs specifically for onFrameReceived to fire.
+ * onLockAcquired and onLockLost also call syncSignal() and set the
+ * generic gSync.fired flag, so a plain syncWait() can return early on
  * the wrong event. This variant loops past those, re-arming the wait,
- * until frame_len becomes non-zero or the deadline passes.
+ * until frameLen becomes non-zero or the deadline passes.
  */
-static int sync_wait_for_frame(int timeout_ms)
+static int syncWaitForFrame(int timeoutMs)
 {
     struct timespec deadline;
     clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec  += timeout_ms / 1000;
-    deadline.tv_nsec += (timeout_ms % 1000) * 1000000L;
+    deadline.tv_sec  += timeoutMs / 1000;
+    deadline.tv_nsec += (timeoutMs % 1000) * 1000000L;
     if (deadline.tv_nsec >= 1000000000L) {
         deadline.tv_sec++; deadline.tv_nsec -= 1000000000L;
     }
 
-    pthread_mutex_lock(&g_sync.mu);
-    while (g_sync.frame_len == 0) {
-        int rc = pthread_cond_timedwait(&g_sync.cv, &g_sync.mu, &deadline);
+    pthread_mutex_lock(&gSync.mu);
+    while (gSync.frameLen == 0) {
+        int rc = pthread_cond_timedwait(&gSync.cv, &gSync.mu, &deadline);
         if (rc != 0) break;   /* timed out */
-        /* Spurious wake from a different callback (lock_acquired/lock_lost):
-         * loop back and keep waiting until frame_len is set or deadline hits. */
+        /* Spurious wake from a different callback (lockAcquired/lockLost):
+         * loop back and keep waiting until frameLen is set or deadline hits. */
     }
-    int got = (g_sync.frame_len != 0);
-    pthread_mutex_unlock(&g_sync.mu);
+    int got = (gSync.frameLen != 0);
+    pthread_mutex_unlock(&gSync.mu);
     return got;
 }
 
-static void sync_signal(void)
+static void syncSignal(void)
 {
-    pthread_mutex_lock(&g_sync.mu);
-    g_sync.fired = 1;
-    pthread_cond_signal(&g_sync.cv);
-    pthread_mutex_unlock(&g_sync.mu);
+    pthread_mutex_lock(&gSync.mu);
+    gSync.fired = 1;
+    pthread_cond_signal(&gSync.cv);
+    pthread_mutex_unlock(&gSync.mu);
 }
 
 /* =========================================================================
@@ -127,41 +127,41 @@ static void sync_signal(void)
  * =========================================================================
  */
 
-static void on_frame_received(const uint8_t *buf, size_t len)
+static void onFrameReceived(const uint8_t *buf, size_t len)
 {
-    if (len > sizeof(g_sync.frame_buf)) len = sizeof(g_sync.frame_buf);
-    memcpy(g_sync.frame_buf, buf, len);
-    g_sync.frame_len = len;
-    sync_signal();
+    if (len > sizeof(gSync.frameBuf)) len = sizeof(gSync.frameBuf);
+    memcpy(gSync.frameBuf, buf, len);
+    gSync.frameLen = len;
+    syncSignal();
 }
 
-static void on_tx_complete(size_t n) { (void)n; }
+static void onTXComplete(size_t n) { (void)n; }
 
-static void on_fault(nstar_fault_source_t src)
+static void onFault(nstarFaultSource_t src)
 {
-    g_sync.fault_source = src;
-    g_sync.fault_fired  = 1;
-    sync_signal();
+    gSync.faultSource = src;
+    gSync.faultFired  = 1;
+    syncSignal();
 }
 
-static void on_lock_acquired(void)
+static void onLockAcquired(void)
 {
-    g_sync.lock_acquired = 1;
-    sync_signal();
+    gSync.lockAcquired = 1;
+    syncSignal();
 }
 
-static void on_lock_lost(void)
+static void onLockLost(void)
 {
-    g_sync.lock_lost = 1;
-    sync_signal();
+    gSync.lockLost = 1;
+    syncSignal();
 }
 
-static const nstar_callbacks_t k_cb = {
-    .on_frame_received = on_frame_received,
-    .on_tx_complete    = on_tx_complete,
-    .on_fault          = on_fault,
-    .on_lock_acquired  = on_lock_acquired,
-    .on_lock_lost      = on_lock_lost,
+static const nstarCallbacks_t kCb = {
+    .onFrameReceived = onFrameReceived,
+    .onTXComplete    = onTXComplete,
+    .onFault          = onFault,
+    .onLockAcquired  = onLockAcquired,
+    .onLockLost      = onLockLost,
 };
 
 /* =========================================================================
@@ -176,26 +176,26 @@ static const nstar_callbacks_t k_cb = {
 #define FD_FN     22   /* FAULT_N      */
 #define FD_RST    23   /* RESET_N      */
 
-static const nstar_config_t k_cfg = {
-    .uart_fd          = FD_UART,
-    .data_fd          = FD_DATA,
-    .gpio_lock_detect = FD_LD,
-    .gpio_data_valid  = FD_DV,
-    .gpio_fault_n     = FD_FN,
-    .gpio_reset_n     = FD_RST,
+static const nstarConfig_t kCfg = {
+    .uartFd          = FD_UART,
+    .dataFd          = FD_DATA,
+    .gpioLockDetect = FD_LD,
+    .gpioDataValid  = FD_DV,
+    .gpioFaultN     = FD_FN,
+    .gpioResetN     = FD_RST,
 };
 
-static nstar_ctx_t *g_ctx = NULL;
+static nstarCtx_t *gCtx = NULL;
 
 static void qr(const char *s)
 {
-    nstar_mock_uart_queue_response((const uint8_t *)s, strlen(s));
+    nstarMockUARTQueueResponse((const uint8_t *)s, strlen(s));
 }
 
 /* Queue the 3-response sequence for a successful startup_sequence
  * (V, R 0x06, W 0x10 — the redundant R 0x08/R 0x09 reads were removed
  * from nstar_core.c since FPGA_OPTION is already in the V response). */
-static void queue_startup_happy(void)
+static void queueStartupHappy(void)
 {
     qr("<V12:010018230042620307:F832>");
     qr("<R02:62:7D57>");
@@ -204,54 +204,54 @@ static void queue_startup_happy(void)
 
 void setUp(void)
 {
-    nstar_mock_reset();
-    sync_init();
+    nstarMockReset();
+    syncInit();
     /* Pre-set DATA_VALID and FAULT_N to idle state */
-    nstar_mock_gpio_set_value(FD_DV, 0);
-    nstar_mock_gpio_set_value(FD_FN, 1);  /* FAULT_N idle = HIGH */
-    nstar_result_t rc = nstar_init(&k_cfg, &k_cb, &g_ctx);
+    nstarMockGPIOSetValue(FD_DV, 0);
+    nstarMockGPIOSetValue(FD_FN, 1);  /* FAULT_N idle = HIGH */
+    nstarResult_t rc = nstarInit(&kCfg, &kCb, &gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
 
     /*
-     * nstar_init() leaves the module in STARTING, not READY.
-     * nstar_rx_configure() requires READY. Run startup_sequence() here
+     * nstarInit() leaves the module in STARTING, not READY.
+     * nstarRXConfigure() requires READY. Run startup_sequence() here
      * so all RX tests start from READY, matching the real init flow.
      */
-    queue_startup_happy();
-    rc = nstar_startup_sequence(g_ctx);
+    queueStartupHappy();
+    rc = nstarStartupSequence(gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
-    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, nstar_get_module_state(g_ctx));
+    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, nstarGetModuleState(gCtx));
 }
 
 void tearDown(void)
 {
-    if (g_ctx) { nstar_deinit(g_ctx); g_ctx = NULL; }
-    sync_destroy();
+    if (gCtx) { nstarDeinit(gCtx); gCtx = NULL; }
+    syncDestroy();
 }
 
 /* =========================================================================
- * nstar_rx_configure tests
+ * nstarRXConfigure tests
  * =========================================================================
  */
 
-void test_rx_configure_null_ctx_returns_not_init(void)
+void testRxConfigureNullCtxReturnsNotInit(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_INIT,
-        nstar_rx_configure(NULL, NSTAR_RX_RATE_16K));
+        nstarRXConfigure(NULL, NSTAR_RX_RATE_16K));
 }
 
 /**
- * nstar_rx_configure sends W 0x22 = rate_code.
+ * nstarRXConfigure sends W 0x22 = rateCode.
  * For NSTAR_RX_RATE_16K (0x1F), expect frame <W04:221F:CCCC>.
  */
-void test_rx_configure_sends_correct_register_write(void)
+void testRxConfigureSendsCorrectRegisterWrite(void)
 {
     qr("<A02:00:466C>");  /* W 0x22 ACK */
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstar_rx_configure(g_ctx, NSTAR_RX_RATE_16K));
+        nstarRXConfigure(gCtx, NSTAR_RX_RATE_16K));
 
     size_t wlen = 0;
-    const uint8_t *w = nstar_mock_uart_get_written(&wlen);
+    const uint8_t *w = nstarMockUARTGetWritten(&wlen);
 
     /* <W04:221F:...> — addr=0x22, val=0x1F */
     int found = 0;
@@ -267,55 +267,55 @@ void test_rx_configure_sends_correct_register_write(void)
 }
 
 /* =========================================================================
- * nstar_rx_get_status tests
+ * nstarRXGetStatus tests
  * =========================================================================
  */
 
-void test_rx_get_status_null_out_returns_param_error(void)
+void testRxGetStatusNullOutReturnsParamError(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstar_rx_get_status(g_ctx, NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarRXGetStatus(gCtx, NULL));
 }
 
 /**
  * RX_STATUS = 0x0F → all four lock bits set.
  */
-void test_rx_get_status_all_bits_set(void)
+void testRxGetStatusAllBitsSet(void)
 {
     qr("<R02:0F:0B6A>");
-    nstar_rx_status_t st;
+    nstarRXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_rx_get_status(g_ctx, &st));
-    TEST_ASSERT_TRUE(st.carrier_detect);
-    TEST_ASSERT_TRUE(st.carrier_lock);
-    TEST_ASSERT_TRUE(st.bit_lock);
-    TEST_ASSERT_TRUE(st.data_valid);
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetStatus(gCtx, &st));
+    TEST_ASSERT_TRUE(st.carrierDetect);
+    TEST_ASSERT_TRUE(st.carrierLock);
+    TEST_ASSERT_TRUE(st.bitLock);
+    TEST_ASSERT_TRUE(st.dataValid);
     TEST_ASSERT_EQUAL_HEX8(0x0F, st.raw);
 }
 
 /**
- * RX_STATUS = 0x01 → only carrier_detect set, others clear.
+ * RX_STATUS = 0x01 → only carrierDetect set, others clear.
  */
-void test_rx_get_status_carrier_only(void)
+void testRxGetStatusCarrierOnly(void)
 {
     qr("<R02:01:9AA4>");
-    nstar_rx_status_t st;
+    nstarRXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_rx_get_status(g_ctx, &st));
-    TEST_ASSERT_TRUE(st.carrier_detect);
-    TEST_ASSERT_FALSE(st.carrier_lock);
-    TEST_ASSERT_FALSE(st.bit_lock);
-    TEST_ASSERT_FALSE(st.data_valid);
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetStatus(gCtx, &st));
+    TEST_ASSERT_TRUE(st.carrierDetect);
+    TEST_ASSERT_FALSE(st.carrierLock);
+    TEST_ASSERT_FALSE(st.bitLock);
+    TEST_ASSERT_FALSE(st.dataValid);
 }
 
 /* =========================================================================
- * nstar_rx_get_link_quality tests
+ * nstarRXGetLinkQuality tests
  * =========================================================================
  */
 
-void test_rx_get_link_quality_null_out_returns_param_error(void)
+void testRxGetLinkQualityNullOutReturnsParamError(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstar_rx_get_link_quality(g_ctx, NULL));
+        nstarRXGetLinkQuality(gCtx, NULL));
 }
 
 /**
@@ -325,7 +325,7 @@ void test_rx_get_link_quality_null_out_returns_param_error(void)
  * RSSI = 64 - 32 = 32 dBm
  * Freq shift = 0x000080 = 128 / 8 = 16 Hz
  */
-void test_rx_get_link_quality_decodes_correctly(void)
+void testRxGetLinkQualityDecodesCorrectly(void)
 {
     /* Eb: 3 individual register reads */
     qr("<R02:00:A995>"); qr("<R02:10:9EA5>"); qr("<R02:00:A995>");
@@ -338,25 +338,25 @@ void test_rx_get_link_quality_decodes_correctly(void)
     /* Freq shift: 3 reads */
     qr("<R02:00:A995>"); qr("<R02:00:A995>"); qr("<R02:80:0034>");
 
-    nstar_link_quality_t lq;
+    nstarLinkQuality_t lq;
     memset(&lq, 0, sizeof(lq));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_rx_get_link_quality(g_ctx, &lq));
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetLinkQuality(gCtx, &lq));
 
     /* Eb/N0 ≈ 21.1 dB — accept ±0.5 for float precision */
-    TEST_ASSERT_FLOAT_WITHIN(0.5f, 21.1f, lq.eb_no_db);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 21.1f, lq.ebNoDB);
 
     /* RSSI = 64 - 32 = 32 */
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 32.0f, lq.rssi_dbm);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 32.0f, lq.rssiDBM);
 
     /* Frequency shift = 128/8 = 16 Hz */
-    TEST_ASSERT_EQUAL_INT32(16, lq.freq_shift_hz);
+    TEST_ASSERT_EQUAL_INT32(16, lq.freqShiftHz);
 }
 
 /**
  * Negative frequency shift — sign extension of 24-bit to 32-bit.
  * 0xFFFF80 = -128 (two's complement 24-bit) → /8 = -16 Hz
  */
-void test_rx_get_link_quality_negative_freq_shift(void)
+void testRxGetLinkQualityNegativeFreqShift(void)
 {
     /* Eb, N0, IQ, AGC — reuse simple values */
     qr("<R02:00:A995>"); qr("<R02:10:9EA5>"); qr("<R02:00:A995>");
@@ -368,10 +368,10 @@ void test_rx_get_link_quality_negative_freq_shift(void)
     /* Compute CRC for each byte frame */
     qr("<R02:FF:61C2>"); qr("<R02:FF:61C2>"); qr("<R02:80:0034>");
 
-    nstar_link_quality_t lq;
+    nstarLinkQuality_t lq;
     memset(&lq, 0, sizeof(lq));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstar_rx_get_link_quality(g_ctx, &lq));
-    TEST_ASSERT_EQUAL_INT32(-16, lq.freq_shift_hz);
+    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetLinkQuality(gCtx, &lq));
+    TEST_ASSERT_EQUAL_INT32(-16, lq.freqShiftHz);
 }
 
 /* =========================================================================
@@ -380,93 +380,93 @@ void test_rx_get_link_quality_negative_freq_shift(void)
  */
 
 /**
- * LOCK_DETECT rising → on_lock_acquired callback fires.
+ * LOCK_DETECT rising → onLockAcquired callback fires.
  * Queue: LOCK_DETECT rising edge, then DATA_VALID edge times out.
  */
-void test_rx_thread_lock_detect_fires_lock_acquired_cb(void)
+void testRxThreadLockDetectFiresLockAcquiredCb(void)
 {
     /* Reset sync state for this specific check */
-    g_sync.lock_acquired = 0;
-    g_sync.fired         = 0;
+    gSync.lockAcquired = 0;
+    gSync.fired         = 0;
 
     /* Queue LOCK_DETECT rising edge */
-    nstar_mock_gpio_queue_edge(FD_LD, NSTAR_GPIO_EDGE_RISING, 0);
+    nstarMockGPIOQueueEdge(FD_LD, NSTAR_GPIO_EDGE_RISING, 0);
 
-    /* Wait for on_lock_acquired to fire (up to 1 s) */
-    int got = sync_wait(1000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_lock_acquired callback did not fire");
-    TEST_ASSERT_TRUE(g_sync.lock_acquired);
+    /* Wait for onLockAcquired to fire (up to 1 s) */
+    int got = syncWait(1000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onLockAcquired callback did not fire");
+    TEST_ASSERT_TRUE(gSync.lockAcquired);
 }
 
 /**
  * Full lock sequence: LOCK_DETECT rising, DATA_VALID rising,
- * data available → on_frame_received fires with correct bytes.
+ * data available → onFrameReceived fires with correct bytes.
  */
-void test_rx_thread_full_lock_sequence_delivers_frame(void)
+void testRxThreadFullLockSequenceDeliversFrame(void)
 {
     /* Supply 64 bytes to the data interface */
     uint8_t payload[64];
     for (int i = 0; i < 64; i++) payload[i] = (uint8_t)i;
-    nstar_mock_data_supply_read(payload, sizeof(payload));
+    nstarMockDataSupplyRead(payload, sizeof(payload));
 
     /* Set DATA_VALID HIGH so gpio_read() returns 1 after lock */
-    nstar_mock_gpio_set_value(FD_DV, 1);
+    nstarMockGPIOSetValue(FD_DV, 1);
 
     /* Queue GPIO edges: LOCK_DETECT rising, then DATA_VALID rising */
-    nstar_mock_gpio_queue_edge(FD_LD, NSTAR_GPIO_EDGE_RISING, 0);
-    nstar_mock_gpio_queue_edge(FD_DV, NSTAR_GPIO_EDGE_RISING, 0);
+    nstarMockGPIOQueueEdge(FD_LD, NSTAR_GPIO_EDGE_RISING, 0);
+    nstarMockGPIOQueueEdge(FD_DV, NSTAR_GPIO_EDGE_RISING, 0);
 
-    /* Wait specifically for on_frame_received (not lock_acquired) */
-    int got = sync_wait_for_frame(2000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_frame_received callback did not fire");
-    TEST_ASSERT_EQUAL_UINT(64, g_sync.frame_len);
-    TEST_ASSERT_EQUAL_MEMORY(payload, g_sync.frame_buf, 64);
+    /* Wait specifically for onFrameReceived (not lockAcquired) */
+    int got = syncWaitForFrame(2000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onFrameReceived callback did not fire");
+    TEST_ASSERT_EQUAL_UINT(64, gSync.frameLen);
+    TEST_ASSERT_EQUAL_MEMORY(payload, gSync.frameBuf, 64);
 }
 
 /**
- * DATA_VALID falls mid-session → on_lock_lost fires.
+ * DATA_VALID falls mid-session → onLockLost fires.
  * Supply one frame of data; after it is read, DATA_VALID goes LOW.
  */
-void test_rx_thread_data_valid_falling_fires_lock_lost_cb(void)
+void testRxThreadDataValidFallingFiresLockLostCb(void)
 {
     /*
-     * Supply first batch: thread reads this, fires on_frame_received.
+     * Supply first batch: thread reads this, fires onFrameReceived.
      * After frame callback, test drops DATA_VALID to 0.
-     * Thread then calls gpio_read() = 0, exits read loop, fires on_lock_lost.
+     * Thread then calls gpio_read() = 0, exits read loop, fires onLockLost.
      */
     uint8_t payload[32];
     memset(payload, 0xAB, sizeof(payload));
-    nstar_mock_data_supply_read(payload, sizeof(payload));
+    nstarMockDataSupplyRead(payload, sizeof(payload));
 
     /* DATA_VALID HIGH so gpio_read returns 1 during the read loop */
-    nstar_mock_gpio_set_value(FD_DV, 1);
+    nstarMockGPIOSetValue(FD_DV, 1);
 
-    nstar_mock_gpio_queue_edge(FD_LD, NSTAR_GPIO_EDGE_RISING, 0);
-    nstar_mock_gpio_queue_edge(FD_DV, NSTAR_GPIO_EDGE_RISING, 0);
+    nstarMockGPIOQueueEdge(FD_LD, NSTAR_GPIO_EDGE_RISING, 0);
+    nstarMockGPIOQueueEdge(FD_DV, NSTAR_GPIO_EDGE_RISING, 0);
 
-    /* Wait specifically for on_frame_received (not lock_acquired) */
-    int got = sync_wait_for_frame(2000);
+    /* Wait specifically for onFrameReceived (not lockAcquired) */
+    int got = syncWaitForFrame(2000);
     TEST_ASSERT_TRUE_MESSAGE(got, "Frame callback did not fire");
-    TEST_ASSERT_EQUAL_UINT(32, g_sync.frame_len);
+    TEST_ASSERT_EQUAL_UINT(32, gSync.frameLen);
 
     /*
      * Drop DATA_VALID BEFORE resetting sync state.
      * The thread will see gpio_read()=0 on its next loop iteration
-     * and call on_lock_lost, which calls sync_signal().
-     * We then reset g_sync.fired under the mutex so we can wait again.
+     * and call onLockLost, which calls syncSignal().
+     * We then reset gSync.fired under the mutex so we can wait again.
      */
-    nstar_mock_gpio_set_value(FD_DV, 0);
+    nstarMockGPIOSetValue(FD_DV, 0);
 
     /* Reset sync state under the mutex to avoid race */
-    pthread_mutex_lock(&g_sync.mu);
-    g_sync.fired     = 0;
-    g_sync.lock_lost = 0;
-    pthread_mutex_unlock(&g_sync.mu);
+    pthread_mutex_lock(&gSync.mu);
+    gSync.fired     = 0;
+    gSync.lockLost = 0;
+    pthread_mutex_unlock(&gSync.mu);
 
-    /* Wait for on_lock_lost (up to 2 s) */
-    got = sync_wait(2000);
-    TEST_ASSERT_TRUE_MESSAGE(got, "on_lock_lost callback did not fire");
-    TEST_ASSERT_TRUE(g_sync.lock_lost);
+    /* Wait for onLockLost (up to 2 s) */
+    got = syncWait(2000);
+    TEST_ASSERT_TRUE_MESSAGE(got, "onLockLost callback did not fire");
+    TEST_ASSERT_TRUE(gSync.lockLost);
 }
 
 /* =========================================================================
@@ -479,23 +479,23 @@ int main(void)
     UNITY_BEGIN();
 
     /* rx_configure */
-    RUN_TEST(test_rx_configure_null_ctx_returns_not_init);
-    RUN_TEST(test_rx_configure_sends_correct_register_write);
+    RUN_TEST(testRxConfigureNullCtxReturnsNotInit);
+    RUN_TEST(testRxConfigureSendsCorrectRegisterWrite);
 
     /* rx_get_status */
-    RUN_TEST(test_rx_get_status_null_out_returns_param_error);
-    RUN_TEST(test_rx_get_status_all_bits_set);
-    RUN_TEST(test_rx_get_status_carrier_only);
+    RUN_TEST(testRxGetStatusNullOutReturnsParamError);
+    RUN_TEST(testRxGetStatusAllBitsSet);
+    RUN_TEST(testRxGetStatusCarrierOnly);
 
     /* rx_get_link_quality */
-    RUN_TEST(test_rx_get_link_quality_null_out_returns_param_error);
-    RUN_TEST(test_rx_get_link_quality_decodes_correctly);
-    RUN_TEST(test_rx_get_link_quality_negative_freq_shift);
+    RUN_TEST(testRxGetLinkQualityNullOutReturnsParamError);
+    RUN_TEST(testRxGetLinkQualityDecodesCorrectly);
+    RUN_TEST(testRxGetLinkQualityNegativeFreqShift);
 
-    /* rx_thread state machine */
-    RUN_TEST(test_rx_thread_lock_detect_fires_lock_acquired_cb);
-    RUN_TEST(test_rx_thread_full_lock_sequence_delivers_frame);
-    RUN_TEST(test_rx_thread_data_valid_falling_fires_lock_lost_cb);
+    /* rxThread state machine */
+    RUN_TEST(testRxThreadLockDetectFiresLockAcquiredCb);
+    RUN_TEST(testRxThreadFullLockSequenceDeliversFrame);
+    RUN_TEST(testRxThreadDataValidFallingFiresLockLostCb);
 
     return UNITY_END();
 }
