@@ -14,7 +14,7 @@
  *      configured for real so the same termios setup code is exercised).
  *   2. Initialise GPIO line "fds" to the fixed integer values the dummy
  *      HAL's gpioFdToFilename() table expects.
- *   3. Call nstarInit() + nstarStartupSequence(), exactly as a real
+ *   3. Call NSTAR_Init() + NSTAR_StartupSequence(), exactly as a real
  *      application would.
  *   4. On every moduleState transition, rxState transition, fault,
  *      frame reception, and TX completion, rewrite the SIL status file
@@ -24,14 +24,14 @@
  *      SIGTERM/SIGINT, or until an optional run-duration argument elapses.
  *
  * Since nstar_core.c has no built-in hook for "notify on every state
- * change", this file polls nstarGetModuleState() and
- * nstarRXGetState() in its own small monitor loop and diffs against
+ * change", this file polls NSTAR_GetModuleState() and
+ * NSTAR_RXGetState() in its own small monitor loop and diffs against
  * the last-seen values — this is allowed because these accessors are
  * part of the public API and are documented as thread-safe.
  */
 
 #define _DEFAULT_SOURCE
-#include "nstar.h"
+#include "ttc_nstar.h"
 #include "sil_common.h"
 #include "sil_status.h"
 #include <stdio.h>
@@ -93,7 +93,7 @@ static void onTXComplete(size_t bytesSent)
     fprintf(stderr, "[nstar_app_sil] tx complete: %zu bytes\n", bytesSent);
 }
 
-static void onFault(nstarFaultSource_t source)
+static void onFault(NSTAR_FaultSource_t source)
 {
     gFaultCount++;
     switch (source) {
@@ -117,7 +117,7 @@ static void onLockLost(void)
     fprintf(stderr, "[nstar_app_sil] lock lost\n");
 }
 
-static const nstarCallbacks_t kCallbacks = {
+static const NSTAR_Callbacks_t kCallbacks = {
     .onFrameReceived = onFrameReceived,
     .onTXComplete    = onTXComplete,
     .onFault          = onFault,
@@ -131,7 +131,7 @@ static const nstarCallbacks_t kCallbacks = {
  * =========================================================================
  */
 
-static void applyAppControlCommands(nstarCtx_t *ctx)
+static void applyAppControlCommands(NSTAR_Ctx_t *ctx)
 {
     char path[512];
     silPath(path, sizeof(path), SIL_APP_CONTROL_FILE);
@@ -149,7 +149,7 @@ static void applyAppControlCommands(nstarCtx_t *ctx)
 
         if (strncmp(line, "TX_START=", 9) == 0) {
             long rate = strtol(line + 9, NULL, 16);
-            nstarResult_t rc = nstarTXStart(ctx, (nstarTXRateCode_t)rate);
+            NSTAR_Result_t rc = NSTAR_TXStart(ctx, (NSTAR_TXRateCode_t)rate);
             gLastTXStartRC = (int)rc;
             fprintf(stderr, "[nstar_app_sil] TX_START(rate=0x%lx) -> %d\n",
                     rate, rc);
@@ -159,7 +159,7 @@ static void applyAppControlCommands(nstarCtx_t *ctx)
                 uint8_t *buf = malloc((size_t)nbytes);
                 if (buf) {
                     for (long i = 0; i < nbytes; i++) buf[i] = (uint8_t)(i & 0xFF);
-                    nstarResult_t rc = nstarTXWrite(ctx, buf, (size_t)nbytes);
+                    NSTAR_Result_t rc = NSTAR_TXWrite(ctx, buf, (size_t)nbytes);
                     gLastTXWriteRC = (int)rc;
                     fprintf(stderr, "[nstar_app_sil] TX_WRITE(%ld bytes) -> %d\n",
                             nbytes, rc);
@@ -167,7 +167,7 @@ static void applyAppControlCommands(nstarCtx_t *ctx)
                 }
             }
         } else if (strncmp(line, "TX_STOP", 7) == 0) {
-            nstarResult_t rc = nstarTXStop(ctx);
+            NSTAR_Result_t rc = NSTAR_TXStop(ctx);
             gLastTXStopRC = (int)rc;
             fprintf(stderr, "[nstar_app_sil] TX_STOP -> %d\n", rc);
         }
@@ -185,7 +185,7 @@ static void applyAppControlCommands(nstarCtx_t *ctx)
  * =========================================================================
  */
 
-static const char *moduleStateName(nstarModuleState_t s)
+static const char *moduleStateName(NSTAR_ModuleState_t s)
 {
     switch (s) {
         case NSTAR_MODULE_UNINIT:        return "UNINIT";
@@ -198,7 +198,7 @@ static const char *moduleStateName(nstarModuleState_t s)
     }
 }
 
-static const char *rxStateName(nstarRXState_t s)
+static const char *rxStateName(NSTAR_RXState_t s)
 {
     switch (s) {
         case NSTAR_RX_IDLE:      return "IDLE";
@@ -209,13 +209,13 @@ static const char *rxStateName(nstarRXState_t s)
     }
 }
 
-static void refreshStatus(nstarCtx_t *ctx)
+static void refreshStatus(NSTAR_Ctx_t *ctx)
 {
     silStatusInit(&gStatus);
     silStatusSet(&gStatus, "MODULE_STATE",
-                   moduleStateName(nstarGetModuleState(ctx)));
+                   moduleStateName(NSTAR_GetModuleState(ctx)));
     silStatusSet(&gStatus, "RX_STATE",
-                   rxStateName(nstarRXGetState(ctx)));
+                   rxStateName(NSTAR_RXGetState(ctx)));
     silStatusSetInt(&gStatus, "FRAME_RECEIVED_COUNT",
                         (long)gFrameReceivedCount);
     silStatusSetInt(&gStatus, "TOTAL_BYTES_RECEIVED",
@@ -338,7 +338,7 @@ static int openUART(const char *slavePath)
  * =========================================================================
  *
  * Ensures every GPIO file exists with a sane idle default before
- * nstarInit() spawns threads that immediately start polling them.
+ * NSTAR_Init() spawns threads that immediately start polling them.
  * FAULT_N idles HIGH (active-low, no fault). LOCK_DETECT and DATA_VALID
  * idle LOW (no signal). RESET_N idles HIGH (not asserted).
  */
@@ -394,7 +394,7 @@ int main(int argc, char **argv)
     int uartFd = openUART(slavePath);
     if (uartFd < 0) return 1;
 
-    nstarConfig_t config = {
+    NSTAR_Config_t config = {
         .uartFd           = uartFd,
         .dataFd            = SIL_FD_DATA_INTERFACE,
         .gpioLockDetect   = SIL_FD_GPIO_LOCK_DETECT,
@@ -403,26 +403,26 @@ int main(int argc, char **argv)
         .gpioResetN       = SIL_FD_GPIO_RESET_N,
     };
 
-    nstarCtx_t *ctx = NULL;
-    nstarResult_t rc = nstarInit(&config, &kCallbacks, &ctx);
+    NSTAR_Ctx_t *ctx = NULL;
+    NSTAR_Result_t rc = NSTAR_Init(&config, &kCallbacks, &ctx);
     if (rc != NSTAR_OK) {
-        fprintf(stderr, "[nstar_app_sil] nstarInit failed: %d\n", rc);
+        fprintf(stderr, "[nstar_app_sil] NSTAR_Init failed: %d\n", rc);
         close(uartFd);
         return 1;
     }
     refreshStatus(ctx);
 
     fprintf(stderr, "[nstar_app_sil] running startup_sequence...\n");
-    rc = nstarStartupSequence(ctx);
+    rc = NSTAR_StartupSequence(ctx);
     fprintf(stderr, "[nstar_app_sil] startup_sequence -> %d (state=%s)\n",
-            rc, moduleStateName(nstarGetModuleState(ctx)));
+            rc, moduleStateName(NSTAR_GetModuleState(ctx)));
     refreshStatus(ctx);
 
     /* Monitor loop: poll module/RX state and counters, refresh the status
      * file whenever anything observable changes. 50ms cadence keeps the
      * SIL test suite's polling responsive without busy-looping. */
-    nstarModuleState_t lastModuleState = nstarGetModuleState(ctx);
-    nstarRXState_t      lastRXState     = nstarRXGetState(ctx);
+    NSTAR_ModuleState_t lastModuleState = NSTAR_GetModuleState(ctx);
+    NSTAR_RXState_t      lastRXState     = NSTAR_RXGetState(ctx);
     size_t lastFrameCount = gFrameReceivedCount;
     size_t lastFaultCount = gFaultCount;
     size_t lastTXCount    = gTXCompleteCount;
@@ -442,8 +442,8 @@ int main(int argc, char **argv)
 
         applyAppControlCommands(ctx);
 
-        nstarModuleState_t curModuleState = nstarGetModuleState(ctx);
-        nstarRXState_t      curRXState     = nstarRXGetState(ctx);
+        NSTAR_ModuleState_t curModuleState = NSTAR_GetModuleState(ctx);
+        NSTAR_RXState_t      curRXState     = NSTAR_RXGetState(ctx);
 
         int txRCChanged = (gLastTXStartRC != rcBeforeStart) ||
                             (gLastTXWriteRC != rcBeforeWrite) ||
@@ -477,7 +477,7 @@ int main(int argc, char **argv)
     }
 
     fprintf(stderr, "[nstar_app_sil] shutting down\n");
-    nstarDeinit(ctx);
+    NSTAR_Deinit(ctx);
     close(uartFd);
     return 0;
 }

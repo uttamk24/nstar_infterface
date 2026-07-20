@@ -27,7 +27,7 @@
 
 #define _DEFAULT_SOURCE
 #include "unity/unity.h"
-#include "nstar.h"
+#include "ttc_nstar.h"
 #include "sil_common.h"
 #include "sil_status.h"
 #include <stdio.h>
@@ -167,7 +167,7 @@ static void supplyRXData(const uint8_t *buf, size_t len)
 
 /**
  * Read the entire TX data file the dummy HAL has appended to via
- * nstarHALDataWrite(). Returns the number of bytes read into buf
+ * nstarDataWrite(). Returns the number of bytes read into buf
  * (up to bufCap), or 0 if the file does not exist yet.
  */
 static size_t readTXData(uint8_t *buf, size_t bufCap)
@@ -269,7 +269,7 @@ void testSilFsmFpgaTypeMismatchDrivesFault(void)
 void testSilCommandsRegisterValueReflectedInIdentityPath(void)
 {
     /* A non-default but still-valid FPGA_TYPE the app should accept is
-     * not possible (only 0x62 passes nstarStartupSequence's check) —
+     * not possible (only 0x62 passes NSTAR_StartupSequence's check) —
      * instead, prove the round-trip is live by setting a WRONG type and
      * confirming the app's startup correctly fails (rather than silently
      * succeeding, which would indicate it isn't really reading the
@@ -313,7 +313,7 @@ void testSilRxLockSequenceDeliversFrame(void)
         "module did not reach READY before RX scenario could start");
 
     /*
-     * Edge-triggered semantics: the dummy HAL's nstarHALGPIOWaitEdge()
+     * Edge-triggered semantics: the dummy HAL's nstarGPIOWaitEdge()
      * seeds its "previous value" baseline from whatever the GPIO file
      * already contains the FIRST time it is asked to wait on that line.
      * If DATA_VALID is already 1 by the time the rxThread starts waiting
@@ -384,7 +384,7 @@ void testSilFaultAssertionThenRecovery(void)
  * Scenario 6 — TX pipeline: full session start/write/stop over real I/O
  * =========================================================================
  *
- * Drives nstarTXStart() / nstarTXWrite() / nstarTXStop() on the
+ * Drives NSTAR_TXStart() / NSTAR_TXWrite() / NSTAR_TXStop() on the
  * REAL nstar_core.c running inside nstar_app_sil, via the app control
  * file. Confirms:
  *   - tx_start succeeds (simulator reports TX_CLOCK_DETECTED=1 by default)
@@ -449,7 +449,7 @@ void testSilTxFullSessionDeliversBytes(void)
  * =========================================================================
  *
  * Forces the simulator to report TX_CLOCK_DETECTED=0, so tx_start's
- * internal R 0x40 check fails to see bit 4 set. Confirms nstarTXStart()
+ * internal R 0x40 check fails to see bit 4 set. Confirms NSTAR_TXStart()
  * returns NSTAR_ERR_NO_CLOCK (-7) rather than silently succeeding, and
  * that the dummy HAL's clock state file is left at "0" (clock was
  * de-asserted again after the failed check, per nstar_core.c's cleanup).
@@ -584,7 +584,7 @@ void testSilRxMultiChunkSessionAccumulatesBytes(void)
  *
  * Sets a hot PA_TEMP_RAW on the simulator BEFORE the app starts, so the
  * health thread's first 30-second poll cycle already sees an
- * over-temperature reading on its very first nstarHealthRead() call.
+ * over-temperature reading on its very first NSTAR_HealthRead() call.
  * This is the one scenario that genuinely needs to wait out the real
  * NSTAR_HEALTH_POLL_INTERVAL_MS (30s, unscaled in the dummy HAL), so its
  * timeout budget is generous (40s) rather than the ~3-5s used elsewhere.
@@ -610,7 +610,7 @@ void testSilHealthOvertempDrivesFaultAndStopsTx(void)
         silStatusWaitFor("LAST_TX_START_RC", "0", 3000),
         "tx_start did not succeed ahead of the thermal scenario");
 
-    /* The health thread's first poll happens ~30s after nstarInit();
+    /* The health thread's first poll happens ~30s after NSTAR_Init();
      * give it a generous margin beyond that real interval. */
     int got = silStatusWaitForChange("FAULT_COUNT", "0", 40000);
     TEST_ASSERT_TRUE_MESSAGE(got,

@@ -2,29 +2,29 @@
  * @file  testTx.c
  * @brief Stage 3 unit tests — TX pipeline.
  *
- * Tests cover nstarTXStart(), nstarTXWrite(), nstarTXStop(),
- * and nstarTXGetStatus() against the mock HAL.
+ * Tests cover NSTAR_TXStart(), NSTAR_TXWrite(), NSTAR_TXStop(),
+ * and NSTAR_TXGetStatus() against the mock HAL.
  *
  * TX sequence under test:
- *   nstarTXStart():
+ *   NSTAR_TXStart():
  *     W 0x22 = rateCode  (set TX data rate)
  *     clock_start()        (assert CLK_TX)
  *     sleep 100 ms         (stabilise)
  *     R 0x40               (read TX_STATUS, check b4=1)
  *     W 0x40 = 0x01        (TX_MODE = Modulation)
  *
- *   nstarTXWrite():
+ *   NSTAR_TXWrite():
  *     data_write() in NSTAR_FRAME_SIZE_BYTES chunks
  *
- *   nstarTXStop():
+ *   NSTAR_TXStop():
  *     W 0x40 = 0x00        (TX_MODE = Standby)
  *     clock_stop()
  *     onTXComplete(bytesSent)
  */
 
 #include "unity/unity.h"
-#include "nstar.h"
-#include "nstar_hal_mock.h"
+#include "ttc_nstar.h"
+#include "ttc_nstar_hal_mock.h"
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -34,7 +34,7 @@
  * =========================================================================
  */
 
-static nstarCtx_t *gCtx      = NULL;
+static NSTAR_Ctx_t *gCtx      = NULL;
 static size_t       gTXCbBytes = 0;
 static int          gTXCbFired = 0;
 
@@ -44,11 +44,11 @@ static void onTXComplete(size_t bytes)
     gTXCbBytes = bytes;
 }
 static void onFrameReceived(const uint8_t *b, size_t l) { (void)b;(void)l; }
-static void onFault(nstarFaultSource_t s)               { (void)s; }
+static void onFault(NSTAR_FaultSource_t s)               { (void)s; }
 static void onLockAcquired(void)                         {}
 static void onLockLost(void)                             {}
 
-static const nstarCallbacks_t kCb = {
+static const NSTAR_Callbacks_t kCb = {
     .onFrameReceived = onFrameReceived,
     .onTXComplete    = onTXComplete,
     .onFault          = onFault,
@@ -56,7 +56,7 @@ static const nstarCallbacks_t kCb = {
     .onLockLost      = onLockLost,
 };
 
-static const nstarConfig_t kCfg = {
+static const NSTAR_Config_t kCfg = {
     .uartFd          = 10,
     .dataFd          = 11,
     .gpioLockDetect = 20,
@@ -105,40 +105,40 @@ void setUp(void)
     nstarMockReset();
     gTXCbFired = 0;
     gTXCbBytes = 0;
-    nstarResult_t rc = nstarInit(&kCfg, &kCb, &gCtx);
+    NSTAR_Result_t rc = NSTAR_Init(&kCfg, &kCb, &gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
 
     /*
-     * nstarInit() leaves the module in STARTING, not READY.
-     * nstarTXStart() and nstarRXConfigure() require READY.
+     * NSTAR_Init() leaves the module in STARTING, not READY.
+     * NSTAR_TXStart() and NSTAR_RXConfigure() require READY.
      * Run startup_sequence() here so all TX tests start from READY,
      * matching the application's real init flow.
      */
     queueStartupHappy();
-    rc = nstarStartupSequence(gCtx);
+    rc = NSTAR_StartupSequence(gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
-    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, nstarGetModuleState(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, NSTAR_GetModuleState(gCtx));
 }
 
 void tearDown(void)
 {
-    if (gCtx) { nstarDeinit(gCtx); gCtx = NULL; }
+    if (gCtx) { NSTAR_Deinit(gCtx); gCtx = NULL; }
 }
 
 /* =========================================================================
- * nstarTXGetStatus tests
+ * NSTAR_TXGetStatus tests
  * =========================================================================
  */
 
 void testTxGetStatusNullCtxReturnsParamError(void)
 {
-    nstarTXStatus_t st;
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarTXGetStatus(NULL, &st));
+    NSTAR_TXStatus_t st;
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_TXGetStatus(NULL, &st));
 }
 
 void testTxGetStatusNullOutReturnsParamError(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarTXGetStatus(gCtx, NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_TXGetStatus(gCtx, NULL));
 }
 
 /**
@@ -147,9 +147,9 @@ void testTxGetStatusNullOutReturnsParamError(void)
 void testTxGetStatusClockDetected(void)
 {
     qr("<R02:10:9EA5>");
-    nstarTXStatus_t st;
+    NSTAR_TXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXGetStatus(gCtx, &st));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXGetStatus(gCtx, &st));
     TEST_ASSERT_TRUE(st.clockDetected);
     TEST_ASSERT_EQUAL(NSTAR_TX_STANDBY, st.currentMode);
     TEST_ASSERT_EQUAL_HEX8(0x10, st.raw);
@@ -161,9 +161,9 @@ void testTxGetStatusClockDetected(void)
 void testTxGetStatusModulationActive(void)
 {
     qr("<R02:11:AD94>");
-    nstarTXStatus_t st;
+    NSTAR_TXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXGetStatus(gCtx, &st));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXGetStatus(gCtx, &st));
     TEST_ASSERT_TRUE(st.clockDetected);
     TEST_ASSERT_EQUAL(NSTAR_TX_MODULATION, st.currentMode);
 }
@@ -174,22 +174,22 @@ void testTxGetStatusModulationActive(void)
 void testTxGetStatusNoClock(void)
 {
     qr("<R02:00:A995>");
-    nstarTXStatus_t st;
+    NSTAR_TXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXGetStatus(gCtx, &st));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXGetStatus(gCtx, &st));
     TEST_ASSERT_FALSE(st.clockDetected);
     TEST_ASSERT_EQUAL(NSTAR_TX_STANDBY, st.currentMode);
 }
 
 /* =========================================================================
- * nstarTXStart tests
+ * NSTAR_TXStart tests
  * =========================================================================
  */
 
 void testTxStartNullCtxReturnsNotInit(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_INIT,
-        nstarTXStart(NULL, NSTAR_TX_RATE_32K));
+        NSTAR_TXStart(NULL, NSTAR_TX_RATE_32K));
 }
 
 /**
@@ -200,7 +200,7 @@ void testTxStartSuccess(void)
 {
     queueTXStartHappy();
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
+        NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K));
     TEST_ASSERT_TRUE(nstarMockDataClockIsRunning());
 }
 
@@ -221,7 +221,7 @@ void testTxStartSendsFramesInCorrectOrder(void)
     nstarMockUARTGetWritten(&baselineLen);
 
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     size_t wlen = 0;
     const uint8_t *wFull = nstarMockUARTGetWritten(&wlen);
@@ -255,7 +255,7 @@ void testTxStartSendsFramesInCorrectOrder(void)
 void testTxStartSetsCorrectRateRegister(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -284,7 +284,7 @@ void testTxStartNoClockReturnsNoClockError(void)
     qr("<R02:00:A995>");   /* R 0x40 TX_STATUS: b4=0 clock NOT found  */
 
     TEST_ASSERT_EQUAL(NSTAR_ERR_NO_CLOCK,
-        nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
+        NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K));
 
     /* Clock must be de-asserted after failure */
     TEST_ASSERT_FALSE(nstarMockDataClockIsRunning());
@@ -297,7 +297,7 @@ void testTxStartRateWriteTimeoutReturnsTimeout(void)
 {
     nstarMockUARTForceTimeout(1);
     TEST_ASSERT_EQUAL(NSTAR_ERR_TIMEOUT,
-        nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
+        NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K));
 }
 
 /**
@@ -306,13 +306,13 @@ void testTxStartRateWriteTimeoutReturnsTimeout(void)
 void testTxStartWhenAlreadyActiveReturnsBusy(void)
 {
     queueTXStartHappy();
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K));
     TEST_ASSERT_EQUAL(NSTAR_ERR_BUSY,
-        nstarTXStart(gCtx, NSTAR_TX_RATE_32K));
+        NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K));
 }
 
 /* =========================================================================
- * nstarTXWrite tests
+ * NSTAR_TXWrite tests
  * =========================================================================
  */
 
@@ -320,15 +320,15 @@ void testTxWriteNullCtxReturnsNotInit(void)
 {
     uint8_t buf[4] = {0};
     TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_INIT,
-        nstarTXWrite(NULL, buf, 4));
+        NSTAR_TXWrite(NULL, buf, 4));
 }
 
 void testTxWriteNullBufReturnsParamError(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarTXWrite(gCtx, NULL, 10));
+        NSTAR_TXWrite(gCtx, NULL, 10));
 }
 
 /**
@@ -338,7 +338,7 @@ void testTxWriteWithoutStartReturnsBusy(void)
 {
     uint8_t buf[16] = {0xAA};
     TEST_ASSERT_EQUAL(NSTAR_ERR_BUSY,
-        nstarTXWrite(gCtx, buf, sizeof(buf)));
+        NSTAR_TXWrite(gCtx, buf, sizeof(buf)));
 }
 
 /**
@@ -347,13 +347,13 @@ void testTxWriteWithoutStartReturnsBusy(void)
 void testTxWriteDeliversAllBytes(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     uint8_t payload[100];
     for (int i = 0; i < 100; i++) payload[i] = (uint8_t)i;
 
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarTXWrite(gCtx, payload, sizeof(payload)));
+        NSTAR_TXWrite(gCtx, payload, sizeof(payload)));
 
     size_t writtenLen = 0;
     const uint8_t *written = nstarMockDataGetWritten(&writtenLen);
@@ -367,13 +367,13 @@ void testTxWriteDeliversAllBytes(void)
 void testTxWriteExactFrameSize(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     uint8_t payload[NSTAR_FRAME_SIZE_BYTES];
     memset(payload, 0xAB, sizeof(payload));
 
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarTXWrite(gCtx, payload, sizeof(payload)));
+        NSTAR_TXWrite(gCtx, payload, sizeof(payload)));
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockDataGetWritten(&wlen);
@@ -388,14 +388,14 @@ void testTxWriteExactFrameSize(void)
 void testTxWriteMultiChunkPreservesAllBytes(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     size_t total = (NSTAR_FRAME_SIZE_BYTES * 2) + 1;
     uint8_t *payload = malloc(total);
     TEST_ASSERT_NOT_NULL(payload);
     for (size_t i = 0; i < total; i++) payload[i] = (uint8_t)(i & 0xFF);
 
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXWrite(gCtx, payload, total));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXWrite(gCtx, payload, total));
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockDataGetWritten(&wlen);
@@ -410,14 +410,14 @@ void testTxWriteMultiChunkPreservesAllBytes(void)
 void testTxWriteMultipleCallsAccumulate(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     uint8_t a[50], b[30];
     memset(a, 0xAA, sizeof(a));
     memset(b, 0xBB, sizeof(b));
 
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXWrite(gCtx, a, sizeof(a)));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXWrite(gCtx, b, sizeof(b)));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXWrite(gCtx, a, sizeof(a)));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXWrite(gCtx, b, sizeof(b)));
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockDataGetWritten(&wlen);
@@ -427,20 +427,20 @@ void testTxWriteMultipleCallsAccumulate(void)
 }
 
 /* =========================================================================
- * nstarTXStop tests
+ * NSTAR_TXStop tests
  * =========================================================================
  */
 
 void testTxStopWithoutStartIsOk(void)
 {
     /* Calling stop when not active should return OK (idempotent) */
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXStop(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXStop(gCtx));
     TEST_ASSERT_FALSE(gTXCbFired);
 }
 
 void testTxStopNullCtxReturnsNotInit(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_INIT, nstarTXStop(NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_INIT, NSTAR_TXStop(NULL));
 }
 
 /**
@@ -449,15 +449,15 @@ void testTxStopNullCtxReturnsNotInit(void)
 void testTxStopSendsStandbyFiresCallback(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
 
     /* Write some data so bytesSent > 0 */
     uint8_t data[64];
     memset(data, 0xCD, sizeof(data));
-    nstarTXWrite(gCtx, data, sizeof(data));
+    NSTAR_TXWrite(gCtx, data, sizeof(data));
 
     queueTXStopHappy();
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXStop(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXStop(gCtx));
 
     /* Callback must have fired */
     TEST_ASSERT_TRUE(gTXCbFired);
@@ -473,9 +473,9 @@ void testTxStopSendsStandbyFiresCallback(void)
 void testTxStopSendsStandbyFrame(void)
 {
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
     queueTXStopHappy();
-    nstarTXStop(gCtx);
+    NSTAR_TXStop(gCtx);
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -501,11 +501,11 @@ void testTxStopResetsByteCounter(void)
 {
     /* Session 1 */
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
     uint8_t d[100]; memset(d, 0, sizeof(d));
-    nstarTXWrite(gCtx, d, 100);
+    NSTAR_TXWrite(gCtx, d, 100);
     queueTXStopHappy();
-    nstarTXStop(gCtx);
+    NSTAR_TXStop(gCtx);
     TEST_ASSERT_EQUAL_UINT(100, gTXCbBytes);
 
     /* Session 2 — fresh start should report only session-2 bytes */
@@ -514,10 +514,10 @@ void testTxStopResetsByteCounter(void)
     gTXCbFired = 0;
 
     queueTXStartHappy();
-    nstarTXStart(gCtx, NSTAR_TX_RATE_32K);
-    nstarTXWrite(gCtx, d, 40);
+    NSTAR_TXStart(gCtx, NSTAR_TX_RATE_32K);
+    NSTAR_TXWrite(gCtx, d, 40);
     queueTXStopHappy();
-    nstarTXStop(gCtx);
+    NSTAR_TXStop(gCtx);
     TEST_ASSERT_EQUAL_UINT(40, gTXCbBytes);
 }
 
@@ -528,7 +528,7 @@ void testTxStopResetsByteCounter(void)
 void testTxFullSessionByteCountMatches(void)
 {
     queueTXStartHappy();
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXStart(gCtx, NSTAR_TX_RATE_256K));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXStart(gCtx, NSTAR_TX_RATE_256K));
 
     uint8_t chunk[512];
     memset(chunk, 0x55, sizeof(chunk));
@@ -536,11 +536,11 @@ void testTxFullSessionByteCountMatches(void)
     /* Write 5 chunks = 2560 bytes */
     for (int i = 0; i < 5; i++) {
         TEST_ASSERT_EQUAL(NSTAR_OK,
-            nstarTXWrite(gCtx, chunk, sizeof(chunk)));
+            NSTAR_TXWrite(gCtx, chunk, sizeof(chunk)));
     }
 
     queueTXStopHappy();
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarTXStop(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_TXStop(gCtx));
 
     TEST_ASSERT_TRUE(gTXCbFired);
     TEST_ASSERT_EQUAL_UINT(5 * 512, gTXCbBytes);

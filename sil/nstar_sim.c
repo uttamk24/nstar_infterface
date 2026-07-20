@@ -43,7 +43,7 @@
  */
 
 #define _DEFAULT_SOURCE
-#include "nstar.h"
+#include "ttc_nstar.h"
 #include "sil_common.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -195,7 +195,7 @@ static char handleCommand(char cmdId, const uint8_t *data, size_t dataLen,
          * Register 0x40 doubles as TX_MODE (write) and TX_STATUS (read)
          * per the IRD. Bit 4 (NSTAR_TX_STATUS_CLOCK_DETECTED) reports
          * whether the TX clock is present on CLK_TX — this is a real
-         * hardware signal nstar_core.c's nstarTXStart() checks before
+         * hardware signal nstar_core.c's NSTAR_TXStart() checks before
          * issuing the Modulation command. The simulator has no actual
          * clock line to sense, so gTXClockDetected stands in for it,
          * settable via the TX_CLOCK_DETECTED control command so SIL
@@ -321,7 +321,7 @@ int main(void)
         uint8_t data[NSTAR_FRAME_BUF_MAX / 2];
         size_t  dataLen = 0;
 
-        nstarResult_t rc = nstarFrameDecode(rxBuf, (size_t)n,
+        NSTAR_Result_t rc = nstarFrameDecode(rxBuf, (size_t)n,
                                                 &cmdId, data, &dataLen);
         if (rc != NSTAR_OK) {
             fprintf(stderr, "[nstar_sim] frame decode error %d, ignoring\n", rc);

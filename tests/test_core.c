@@ -5,12 +5,12 @@
  *
  * All tests run synchronously against the mock HAL.
  * No threads are spawned; nstar_core functions are called directly.
- * Each test calls nstarMockReset() and nstarInit() in setUp().
+ * Each test calls nstarMockReset() and NSTAR_Init() in setUp().
  */
 
 #include "unity/unity.h"
-#include "nstar.h"
-#include "nstar_hal_mock.h"
+#include "ttc_nstar.h"
+#include "ttc_nstar_hal_mock.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -27,16 +27,16 @@
 #define FAKE_GPIO_FN     22   /* FAULT_N     */
 #define FAKE_GPIO_RST    23   /* RESET_N     */
 
-static nstarCtx_t *gCtx = NULL;
+static NSTAR_Ctx_t *gCtx = NULL;
 
 static void dummyOnFrameReceived(const uint8_t *b, size_t l)
 { (void)b; (void)l; }
 static void dummyOnTXComplete(size_t n) { (void)n; }
-static void dummyOnFault(nstarFaultSource_t s) { (void)s; }
+static void dummyOnFault(NSTAR_FaultSource_t s) { (void)s; }
 static void dummyOnLockAcquired(void) {}
 static void dummyOnLockLost(void) {}
 
-static const nstarCallbacks_t kCallbacks = {
+static const NSTAR_Callbacks_t kCallbacks = {
     .onFrameReceived = dummyOnFrameReceived,
     .onTXComplete    = dummyOnTXComplete,
     .onFault          = dummyOnFault,
@@ -44,7 +44,7 @@ static const nstarCallbacks_t kCallbacks = {
     .onLockLost      = dummyOnLockLost,
 };
 
-static const nstarConfig_t kConfig = {
+static const NSTAR_Config_t kConfig = {
     .uartFd           = FAKE_UART_FD,
     .dataFd           = FAKE_DATA_FD,
     .gpioLockDetect  = FAKE_GPIO_LD,
@@ -63,7 +63,7 @@ static void queueResponse(const char *frameStr)
 void setUp(void)
 {
     nstarMockReset();
-    nstarResult_t rc = nstarInit(&kConfig, &kCallbacks, &gCtx);
+    NSTAR_Result_t rc = NSTAR_Init(&kConfig, &kCallbacks, &gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
     TEST_ASSERT_NOT_NULL(gCtx);
 }
@@ -71,7 +71,7 @@ void setUp(void)
 void tearDown(void)
 {
     if (gCtx) {
-        nstarDeinit(gCtx);
+        NSTAR_Deinit(gCtx);
         gCtx = NULL;
     }
 }
@@ -83,50 +83,50 @@ void tearDown(void)
 
 void testInitNullConfigReturnsParamError(void)
 {
-    nstarCtx_t *ctx = NULL;
+    NSTAR_Ctx_t *ctx = NULL;
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarInit(NULL, &kCallbacks, &ctx));
+        NSTAR_Init(NULL, &kCallbacks, &ctx));
 }
 
 void testInitNullCallbacksReturnsParamError(void)
 {
-    nstarCtx_t *ctx = NULL;
+    NSTAR_Ctx_t *ctx = NULL;
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarInit(&kConfig, NULL, &ctx));
+        NSTAR_Init(&kConfig, NULL, &ctx));
 }
 
 void testInitNullCtxOutReturnsParamError(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarInit(&kConfig, &kCallbacks, NULL));
+        NSTAR_Init(&kConfig, &kCallbacks, NULL));
 }
 
 void testInitSuccessReturnsNonNullCtx(void)
 {
-    /* setUp() already called nstarInit; ctx is non-null */
+    /* setUp() already called NSTAR_Init; ctx is non-null */
     TEST_ASSERT_NOT_NULL(gCtx);
 }
 
 void testDeinitNullCtxIsSafe(void)
 {
     /* Must not crash */
-    nstarDeinit(NULL);
+    NSTAR_Deinit(NULL);
 }
 
 /* =========================================================================
- * nstarRegRead tests
+ * NSTAR_RegRead tests
  * =========================================================================
  */
 
 void testRegReadNullCtxReturnsParamError(void)
 {
     uint8_t val;
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarRegRead(NULL, 0x06, &val));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_RegRead(NULL, 0x06, &val));
 }
 
 void testRegReadNullValReturnsParamError(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarRegRead(gCtx, 0x06, NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_RegRead(gCtx, 0x06, NULL));
 }
 
 /**
@@ -138,7 +138,7 @@ void testRegReadFpgaTypeReturnsCorrectValue(void)
 {
     queueResponse("<R02:62:7D57>");
     uint8_t val = 0;
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_RegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
     TEST_ASSERT_EQUAL_HEX8(0x62, val);
 }
 
@@ -151,7 +151,7 @@ void testRegReadSendsCorrectFrame(void)
     queueResponse("<R02:62:7D57>");
 
     uint8_t val = 0;
-    nstarRegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val);
+    NSTAR_RegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val);
 
     size_t writtenLen = 0;
     const uint8_t *written = nstarMockUARTGetWritten(&writtenLen);
@@ -177,7 +177,7 @@ void testRegReadTimeoutReturnsTimeoutError(void)
     nstarMockUARTForceTimeout(1);
     uint8_t val = 0;
     TEST_ASSERT_EQUAL(NSTAR_ERR_TIMEOUT,
-        nstarRegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
+        NSTAR_RegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
 }
 
 /**
@@ -192,7 +192,7 @@ void testRegReadCrcErrorAfterRetry(void)
     queueResponse("<R02:62:7D58>");
     uint8_t val = 0;
     TEST_ASSERT_EQUAL(NSTAR_ERR_CRC,
-        nstarRegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
+        NSTAR_RegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
 }
 
 /**
@@ -204,19 +204,19 @@ void testRegReadSucceedsOnRetry(void)
     queueResponse("<R02:62:7D57>");   /* correct */
     uint8_t val = 0;
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarRegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
+        NSTAR_RegRead(gCtx, NSTAR_REG_FPGA_TYPE, &val));
     TEST_ASSERT_EQUAL_HEX8(0x62, val);
 }
 
 /* =========================================================================
- * nstarRegWrite tests
+ * NSTAR_RegWrite tests
  * =========================================================================
  */
 
 void testRegWriteNullCtxReturnsParamError(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarRegWrite(NULL, NSTAR_REG_TX_MODE, 0x01));
+        NSTAR_RegWrite(NULL, NSTAR_REG_TX_MODE, 0x01));
 }
 
 /**
@@ -227,7 +227,7 @@ void testRegWriteTxModeModulationSuccess(void)
 {
     queueResponse("<A02:00:466C>");
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarRegWrite(gCtx, NSTAR_REG_TX_MODE, NSTAR_TX_MODE_MODULATION));
+        NSTAR_RegWrite(gCtx, NSTAR_REG_TX_MODE, NSTAR_TX_MODE_MODULATION));
 }
 
 /**
@@ -237,7 +237,7 @@ void testRegWriteTxModeModulationSuccess(void)
 void testRegWriteSendsCorrectFrame(void)
 {
     queueResponse("<A02:00:466C>");
-    nstarRegWrite(gCtx, NSTAR_REG_TX_MODE, NSTAR_TX_MODE_MODULATION);
+    NSTAR_RegWrite(gCtx, NSTAR_REG_TX_MODE, NSTAR_TX_MODE_MODULATION);
 
     size_t writtenLen = 0;
     const uint8_t *written = nstarMockUARTGetWritten(&writtenLen);
@@ -263,7 +263,7 @@ void testRegWriteBadAckReturnsBadAckError(void)
 {
     queueResponse("<A02:01:755D>");
     TEST_ASSERT_EQUAL(NSTAR_ERR_BAD_ACK,
-        nstarRegWrite(gCtx, NSTAR_REG_TX_MODE, 0x01));
+        NSTAR_RegWrite(gCtx, NSTAR_REG_TX_MODE, 0x01));
 }
 
 /**
@@ -273,11 +273,11 @@ void testRegWriteTimeoutReturnsTimeoutError(void)
 {
     nstarMockUARTForceTimeout(1);
     TEST_ASSERT_EQUAL(NSTAR_ERR_TIMEOUT,
-        nstarRegWrite(gCtx, NSTAR_REG_TX_MODE, 0x01));
+        NSTAR_RegWrite(gCtx, NSTAR_REG_TX_MODE, 0x01));
 }
 
 /* =========================================================================
- * nstarRegReadMulti tests
+ * NSTAR_RegReadMulti tests
  * =========================================================================
  */
 
@@ -293,7 +293,7 @@ void testRegReadMultiReadsNRegisters(void)
 
     uint8_t buf[3] = {0};
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarRegReadMulti(gCtx, 0x08, 3, buf));
+        NSTAR_RegReadMulti(gCtx, 0x08, 3, buf));
 
     TEST_ASSERT_EQUAL_HEX8(0x03, buf[0]);
     TEST_ASSERT_EQUAL_HEX8(0x07, buf[1]);
@@ -304,11 +304,11 @@ void testRegReadMultiZeroCountReturnsParamError(void)
 {
     uint8_t buf[4];
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarRegReadMulti(gCtx, 0x08, 0, buf));
+        NSTAR_RegReadMulti(gCtx, 0x08, 0, buf));
 }
 
 /* =========================================================================
- * nstarCMDReadIdentity (V command) tests
+ * NSTAR_CMDReadIdentity (V command) tests
  * =========================================================================
  */
 
@@ -327,9 +327,9 @@ void testCmdReadIdentitySuccess(void)
 {
     queueResponse("<V12:010018230042620307:F832>");
 
-    nstarIdentity_t id;
+    NSTAR_Identity_t id;
     memset(&id, 0, sizeof(id));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarCMDReadIdentity(gCtx, &id));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_CMDReadIdentity(gCtx, &id));
 
     TEST_ASSERT_EQUAL_HEX8(0x01, id.fpgaVersion);
     TEST_ASSERT_EQUAL_HEX8(0x00, id.fpgaBuild);
@@ -343,7 +343,7 @@ void testCmdReadIdentitySuccess(void)
 void testCmdReadIdentityNullOutReturnsParamError(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarCMDReadIdentity(gCtx, NULL));
+        NSTAR_CMDReadIdentity(gCtx, NULL));
 }
 
 /**
@@ -353,8 +353,8 @@ void testCmdReadIdentityNullOutReturnsParamError(void)
 void testCmdReadIdentitySendsVFrame(void)
 {
     queueResponse("<V12:010018230042620307:F832>");
-    nstarIdentity_t id;
-    nstarCMDReadIdentity(gCtx, &id);
+    NSTAR_Identity_t id;
+    NSTAR_CMDReadIdentity(gCtx, &id);
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -367,7 +367,7 @@ void testCmdReadIdentitySendsVFrame(void)
 }
 
 /* =========================================================================
- * nstarCMDReadAllRXStatus (E command) tests
+ * NSTAR_CMDReadAllRXStatus (E command) tests
  * =========================================================================
  */
 
@@ -382,7 +382,7 @@ void testCmdReadAllRxStatusSuccess(void)
     uint8_t raw[32] = {0};
     size_t  len = 0;
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarCMDReadAllRXStatus(gCtx, raw, &len));
+        NSTAR_CMDReadAllRXStatus(gCtx, raw, &len));
     TEST_ASSERT_EQUAL_UINT(19, len);
     TEST_ASSERT_EQUAL_HEX8(0x10, raw[0]);
     TEST_ASSERT_EQUAL_HEX8(0x22, raw[18]);
@@ -392,11 +392,11 @@ void testCmdReadAllRxStatusNullOutReturnsParamError(void)
 {
     size_t len;
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarCMDReadAllRXStatus(gCtx, NULL, &len));
+        NSTAR_CMDReadAllRXStatus(gCtx, NULL, &len));
 }
 
 /* =========================================================================
- * nstarCMDReset (C command) tests
+ * NSTAR_CMDReset (C command) tests
  * =========================================================================
  */
 
@@ -407,7 +407,7 @@ void testCmdReadAllRxStatusNullOutReturnsParamError(void)
 void testCmdResetSuccess(void)
 {
     queueResponse("<A02:00:466C>");
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarCMDReset(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_CMDReset(gCtx));
 }
 
 /**
@@ -417,7 +417,7 @@ void testCmdResetSuccess(void)
 void testCmdResetSendsMagicWord(void)
 {
     queueResponse("<A02:00:466C>");
-    nstarCMDReset(gCtx);
+    NSTAR_CMDReset(gCtx);
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -437,11 +437,11 @@ void testCmdResetSendsMagicWord(void)
 void testCmdResetBadAckReturnsError(void)
 {
     queueResponse("<A02:01:755D>");
-    TEST_ASSERT_EQUAL(NSTAR_ERR_BAD_ACK, nstarCMDReset(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_BAD_ACK, NSTAR_CMDReset(gCtx));
 }
 
 /* =========================================================================
- * nstarStartupSequence tests
+ * NSTAR_StartupSequence tests
  * =========================================================================
  */
 
@@ -461,7 +461,7 @@ void testStartupSequenceSuccess(void)
     queueResponse("<R02:62:7D57>");                  /* R 0x06 */
     queueResponse("<A02:00:466C>");                  /* W 0x10 */
 
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarStartupSequence(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_StartupSequence(gCtx));
 }
 
 /**
@@ -474,7 +474,7 @@ void testStartupWrongFpgaTypeReturnsError(void)
     queueResponse("<R02:FF:61C2>");                  /* R 0x06 = 0xFF (wrong) */
 
     TEST_ASSERT_EQUAL(NSTAR_ERR_FPGA_TYPE,
-        nstarStartupSequence(gCtx));
+        NSTAR_StartupSequence(gCtx));
 }
 
 /**
@@ -484,7 +484,7 @@ void testStartupVTimeoutReturnsTimeoutError(void)
 {
     nstarMockUARTForceTimeout(1);
     TEST_ASSERT_EQUAL(NSTAR_ERR_TIMEOUT,
-        nstarStartupSequence(gCtx));
+        NSTAR_StartupSequence(gCtx));
 }
 
 /**
@@ -498,7 +498,7 @@ void testStartupObsWriteTimeoutReturnsTimeoutError(void)
     nstarMockUARTForceTimeout(1);
 
     TEST_ASSERT_EQUAL(NSTAR_ERR_TIMEOUT,
-        nstarStartupSequence(gCtx));
+        NSTAR_StartupSequence(gCtx));
 }
 
 /**
@@ -513,7 +513,7 @@ void testStartupSendsVCommandFirst(void)
     queueResponse("<R02:62:7D57>");
     queueResponse("<A02:00:466C>");
 
-    nstarStartupSequence(gCtx);
+    NSTAR_StartupSequence(gCtx);
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -535,7 +535,7 @@ void testStartupLastFrameIsObsSweepWrite(void)
     queueResponse("<R02:62:7D57>");
     queueResponse("<A02:00:466C>");
 
-    nstarStartupSequence(gCtx);
+    NSTAR_StartupSequence(gCtx);
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -555,7 +555,7 @@ void testStartupLastFrameIsObsSweepWrite(void)
 }
 
 /* =========================================================================
- * nstarGetIdentity tests
+ * NSTAR_GetIdentity tests
  * =========================================================================
  *
  * Verifies the bug fix: identity (including fpgaOptions) read during
@@ -566,24 +566,24 @@ void testStartupLastFrameIsObsSweepWrite(void)
 
 void testGetIdentityBeforeStartupReturnsNotReady(void)
 {
-    nstarIdentity_t id;
+    NSTAR_Identity_t id;
     memset(&id, 0, sizeof(id));
-    TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_READY, nstarGetIdentity(gCtx, &id));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_READY, NSTAR_GetIdentity(gCtx, &id));
 }
 
 void testGetIdentityNullCtxReturnsParamError(void)
 {
-    nstarIdentity_t id;
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarGetIdentity(NULL, &id));
+    NSTAR_Identity_t id;
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_GetIdentity(NULL, &id));
 }
 
 void testGetIdentityNullOutReturnsParamError(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarGetIdentity(gCtx, NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_GetIdentity(gCtx, NULL));
 }
 
 /**
- * After a successful startup_sequence(), nstarGetIdentity() must
+ * After a successful startup_sequence(), NSTAR_GetIdentity() must
  * return the same fpgaOptions the V command reported — proving the
  * data survives past the function call instead of being discarded.
  */
@@ -593,11 +593,11 @@ void testGetIdentityAfterStartupReturnsCachedFpgaOptions(void)
     queueResponse("<R02:62:7D57>");
     queueResponse("<A02:00:466C>");
 
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarStartupSequence(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_StartupSequence(gCtx));
 
-    nstarIdentity_t id;
+    NSTAR_Identity_t id;
     memset(&id, 0, sizeof(id));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarGetIdentity(gCtx, &id));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_GetIdentity(gCtx, &id));
     TEST_ASSERT_EQUAL_HEX8(0x62, id.fpgaType);
     TEST_ASSERT_EQUAL_HEX16(0x0307, id.fpgaOptions);
 }

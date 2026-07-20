@@ -3,25 +3,25 @@
  * @brief Stage 4 unit tests — RX pipeline.
  *
  * Tests cover:
- *   - nstarRXConfigure()
- *   - nstarRXGetStatus() register decode
- *   - nstarRXGetLinkQuality() multi-register decode
+ *   - NSTAR_RXConfigure()
+ *   - NSTAR_RXGetStatus() register decode
+ *   - NSTAR_RXGetLinkQuality() multi-register decode
  *   - rxThreadFunc() state machine via GPIO edge sequences
  *
  * Threading notes:
- *   nstarInit() now spawns the rxThread, faultThread, and healthThread.
+ *   NSTAR_Init() now spawns the rxThread, faultThread, and healthThread.
  *   Tests that exercise the rxThread queue GPIO edges via the mock and then
  *   wait for the onFrameReceived / onLockAcquired / onLockLost
  *   callbacks using a pthread_cond_t.
  *
- *   setUp() calls nstarInit() which starts all three threads.
+ *   setUp() calls NSTAR_Init() which starts all three threads.
  *   The fault and health threads block on GPIO edges / sleep — they will
  *   not interfere with RX tests because their GPIO fds differ.
  */
 
 #include "unity/unity.h"
-#include "nstar.h"
-#include "nstar_hal_mock.h"
+#include "ttc_nstar.h"
+#include "ttc_nstar_hal_mock.h"
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -42,7 +42,7 @@ typedef struct {
     size_t          frameLen;
     int             lockAcquired;
     int             lockLost;
-    nstarFaultSource_t faultSource;
+    NSTAR_FaultSource_t faultSource;
     int             faultFired;
 } cbSync_t;
 
@@ -137,7 +137,7 @@ static void onFrameReceived(const uint8_t *buf, size_t len)
 
 static void onTXComplete(size_t n) { (void)n; }
 
-static void onFault(nstarFaultSource_t src)
+static void onFault(NSTAR_FaultSource_t src)
 {
     gSync.faultSource = src;
     gSync.faultFired  = 1;
@@ -156,7 +156,7 @@ static void onLockLost(void)
     syncSignal();
 }
 
-static const nstarCallbacks_t kCb = {
+static const NSTAR_Callbacks_t kCb = {
     .onFrameReceived = onFrameReceived,
     .onTXComplete    = onTXComplete,
     .onFault          = onFault,
@@ -176,7 +176,7 @@ static const nstarCallbacks_t kCb = {
 #define FD_FN     22   /* FAULT_N      */
 #define FD_RST    23   /* RESET_N      */
 
-static const nstarConfig_t kCfg = {
+static const NSTAR_Config_t kCfg = {
     .uartFd          = FD_UART,
     .dataFd          = FD_DATA,
     .gpioLockDetect = FD_LD,
@@ -185,7 +185,7 @@ static const nstarConfig_t kCfg = {
     .gpioResetN     = FD_RST,
 };
 
-static nstarCtx_t *gCtx = NULL;
+static NSTAR_Ctx_t *gCtx = NULL;
 
 static void qr(const char *s)
 {
@@ -209,46 +209,46 @@ void setUp(void)
     /* Pre-set DATA_VALID and FAULT_N to idle state */
     nstarMockGPIOSetValue(FD_DV, 0);
     nstarMockGPIOSetValue(FD_FN, 1);  /* FAULT_N idle = HIGH */
-    nstarResult_t rc = nstarInit(&kCfg, &kCb, &gCtx);
+    NSTAR_Result_t rc = NSTAR_Init(&kCfg, &kCb, &gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
 
     /*
-     * nstarInit() leaves the module in STARTING, not READY.
-     * nstarRXConfigure() requires READY. Run startup_sequence() here
+     * NSTAR_Init() leaves the module in STARTING, not READY.
+     * NSTAR_RXConfigure() requires READY. Run startup_sequence() here
      * so all RX tests start from READY, matching the real init flow.
      */
     queueStartupHappy();
-    rc = nstarStartupSequence(gCtx);
+    rc = NSTAR_StartupSequence(gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
-    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, nstarGetModuleState(gCtx));
+    TEST_ASSERT_EQUAL(NSTAR_MODULE_READY, NSTAR_GetModuleState(gCtx));
 }
 
 void tearDown(void)
 {
-    if (gCtx) { nstarDeinit(gCtx); gCtx = NULL; }
+    if (gCtx) { NSTAR_Deinit(gCtx); gCtx = NULL; }
     syncDestroy();
 }
 
 /* =========================================================================
- * nstarRXConfigure tests
+ * NSTAR_RXConfigure tests
  * =========================================================================
  */
 
 void testRxConfigureNullCtxReturnsNotInit(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_NOT_INIT,
-        nstarRXConfigure(NULL, NSTAR_RX_RATE_16K));
+        NSTAR_RXConfigure(NULL, NSTAR_RX_RATE_16K));
 }
 
 /**
- * nstarRXConfigure sends W 0x22 = rateCode.
+ * NSTAR_RXConfigure sends W 0x22 = rateCode.
  * For NSTAR_RX_RATE_16K (0x1F), expect frame <W04:221F:CCCC>.
  */
 void testRxConfigureSendsCorrectRegisterWrite(void)
 {
     qr("<A02:00:466C>");  /* W 0x22 ACK */
     TEST_ASSERT_EQUAL(NSTAR_OK,
-        nstarRXConfigure(gCtx, NSTAR_RX_RATE_16K));
+        NSTAR_RXConfigure(gCtx, NSTAR_RX_RATE_16K));
 
     size_t wlen = 0;
     const uint8_t *w = nstarMockUARTGetWritten(&wlen);
@@ -267,13 +267,13 @@ void testRxConfigureSendsCorrectRegisterWrite(void)
 }
 
 /* =========================================================================
- * nstarRXGetStatus tests
+ * NSTAR_RXGetStatus tests
  * =========================================================================
  */
 
 void testRxGetStatusNullOutReturnsParamError(void)
 {
-    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, nstarRXGetStatus(gCtx, NULL));
+    TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM, NSTAR_RXGetStatus(gCtx, NULL));
 }
 
 /**
@@ -282,9 +282,9 @@ void testRxGetStatusNullOutReturnsParamError(void)
 void testRxGetStatusAllBitsSet(void)
 {
     qr("<R02:0F:0B6A>");
-    nstarRXStatus_t st;
+    NSTAR_RXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetStatus(gCtx, &st));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_RXGetStatus(gCtx, &st));
     TEST_ASSERT_TRUE(st.carrierDetect);
     TEST_ASSERT_TRUE(st.carrierLock);
     TEST_ASSERT_TRUE(st.bitLock);
@@ -298,9 +298,9 @@ void testRxGetStatusAllBitsSet(void)
 void testRxGetStatusCarrierOnly(void)
 {
     qr("<R02:01:9AA4>");
-    nstarRXStatus_t st;
+    NSTAR_RXStatus_t st;
     memset(&st, 0, sizeof(st));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetStatus(gCtx, &st));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_RXGetStatus(gCtx, &st));
     TEST_ASSERT_TRUE(st.carrierDetect);
     TEST_ASSERT_FALSE(st.carrierLock);
     TEST_ASSERT_FALSE(st.bitLock);
@@ -308,14 +308,14 @@ void testRxGetStatusCarrierOnly(void)
 }
 
 /* =========================================================================
- * nstarRXGetLinkQuality tests
+ * NSTAR_RXGetLinkQuality tests
  * =========================================================================
  */
 
 void testRxGetLinkQualityNullOutReturnsParamError(void)
 {
     TEST_ASSERT_EQUAL(NSTAR_ERR_PARAM,
-        nstarRXGetLinkQuality(gCtx, NULL));
+        NSTAR_RXGetLinkQuality(gCtx, NULL));
 }
 
 /**
@@ -338,9 +338,9 @@ void testRxGetLinkQualityDecodesCorrectly(void)
     /* Freq shift: 3 reads */
     qr("<R02:00:A995>"); qr("<R02:00:A995>"); qr("<R02:80:0034>");
 
-    nstarLinkQuality_t lq;
+    NSTAR_LinkQuality_t lq;
     memset(&lq, 0, sizeof(lq));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetLinkQuality(gCtx, &lq));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_RXGetLinkQuality(gCtx, &lq));
 
     /* Eb/N0 ≈ 21.1 dB — accept ±0.5 for float precision */
     TEST_ASSERT_FLOAT_WITHIN(0.5f, 21.1f, lq.ebNoDB);
@@ -368,9 +368,9 @@ void testRxGetLinkQualityNegativeFreqShift(void)
     /* Compute CRC for each byte frame */
     qr("<R02:FF:61C2>"); qr("<R02:FF:61C2>"); qr("<R02:80:0034>");
 
-    nstarLinkQuality_t lq;
+    NSTAR_LinkQuality_t lq;
     memset(&lq, 0, sizeof(lq));
-    TEST_ASSERT_EQUAL(NSTAR_OK, nstarRXGetLinkQuality(gCtx, &lq));
+    TEST_ASSERT_EQUAL(NSTAR_OK, NSTAR_RXGetLinkQuality(gCtx, &lq));
     TEST_ASSERT_EQUAL_INT32(-16, lq.freqShiftHz);
 }
 

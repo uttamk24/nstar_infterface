@@ -48,9 +48,9 @@ static inline void silPath(char *out, size_t outLen, const char *leaf)
 #define SIL_PTY_LINK_FILE        "uart_pty_path.txt"
 
 /* GPIO lines: plain text files containing "0" or "1".
- * The dummy HAL polls these for nstarHALGPIORead() and
- * nstarHALGPIOWaitEdge(); the SIL test suite writes them directly.
- * nstarHALGPIOWrite() (RESET_N is the only output line) writes here too,
+ * The dummy HAL polls these for nstarGPIORead() and
+ * nstarGPIOWaitEdge(); the SIL test suite writes them directly.
+ * nstarGPIOWrite() (RESET_N is the only output line) writes here too,
  * and the simulator polls reset_n to detect a forced reset. */
 #define SIL_GPIO_LOCK_DETECT_FILE "gpioLockDetect.txt"
 #define SIL_GPIO_DATA_VALID_FILE  "gpioDataValid.txt"
@@ -63,7 +63,7 @@ static inline void silPath(char *out, size_t outLen, const char *leaf)
 #define SIL_DATA_TX_FILE         "data_tx.bin"
 #define SIL_DATA_RX_FILE         "data_rx.bin"
 
-/* Data clock state: "1" while nstarHALDataClockStart() has been called
+/* Data clock state: "1" while nstarDataClockStart() has been called
  * and not yet stopped. The simulator does not need this directly, but the
  * SIL test suite reads it to confirm TX clock control behaviour. */
 #define SIL_DATA_CLOCK_FILE      "data_clock_state.txt"
@@ -95,13 +95,13 @@ static inline void silPath(char *out, size_t outLen, const char *leaf)
 
 /* Application control file: the SIL test suite writes commands here that
  * nstar_app_sil polls in its monitor loop and acts on by calling the real
- * nstar_core.c public API (nstarTXStart, nstarTXWrite, nstarTXStop).
+ * nstar_core.c public API (NSTAR_TXStart, NSTAR_TXWrite, NSTAR_TXStop).
  * One command per line, consumed and truncated after processing.
  * Supported commands (see nstar_app_sil.c for the authoritative list):
- *   TX_START=<rate_hex>   calls nstarTXStart() with the given rate code
- *   TX_WRITE=<nbytes>     calls nstarTXWrite() with <nbytes> of a fixed
+ *   TX_START=<rate_hex>   calls NSTAR_TXStart() with the given rate code
+ *   TX_WRITE=<nbytes>     calls NSTAR_TXWrite() with <nbytes> of a fixed
  *                         deterministic pattern (i & 0xFF per byte)
- *   TX_STOP               calls nstarTXStop()
+ *   TX_STOP               calls NSTAR_TXStop()
  */
 #define SIL_APP_CONTROL_FILE     "appControl.txt"
 

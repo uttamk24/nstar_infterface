@@ -1,5 +1,5 @@
 /**
- * @file  nstar_frame.c
+ * @file  ttc_nstar_frame.c
  * @brief UART frame encoder, decoder, and CRC16-XMODEM implementation.
  *
  * Zero hardware dependency — no HAL calls, no threading, no I/O.
@@ -20,7 +20,7 @@
  *   crc("<R02:10:") = 0x9EA5  (R command, addr 0x10)
  */
 
-#include "nstar.h"
+#include "ttc_nstar.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -69,11 +69,11 @@ static bool hexDecode(const char *src, size_t srcLen,
  * =========================================================================
  * Poly: 0x1021, Init: 0x0000, MSB first, no reflection.
  * Verification (IRD §3.3.2.1):
- *   nstarCRC16XMODEM("123456789", 9) == 0x31C3
- *   nstarCRC16XMODEM("<V00::",    6) == 0x68D3
- *   nstarCRC16XMODEM("<R02:10:",  8) == 0x9EA5
+ *   nstarCRC16Xmodem("123456789", 9) == 0x31C3
+ *   nstarCRC16Xmodem("<V00::",    6) == 0x68D3
+ *   nstarCRC16Xmodem("<R02:10:",  8) == 0x9EA5
  */
-uint16_t nstarCRC16XMODEM(const uint8_t *data, size_t len)
+uint16_t nstarCRC16Xmodem(const uint8_t *data, size_t len)
 {
     uint16_t crc = 0x0000U;
     for (size_t i = 0; i < len; i++) {
@@ -117,7 +117,7 @@ uint16_t nstarCRC16XMODEM(const uint8_t *data, size_t len)
  *   W cmd (addr=0x40, val=0x01):  <W04:4001:CCCC>
  *     DATA_SIZE='04' (4 ASCII chars), DATA='4001', CRC input=b"<W04:4001:"
  */
-nstarResult_t nstarFrameEncode(char cmdId,
+NSTAR_Result_t nstarFrameEncode(char cmdId,
                                    const uint8_t *dataIn, size_t dataLen,
                                    uint8_t *bufOut, size_t *lenOut)
 {
@@ -154,7 +154,7 @@ nstarResult_t nstarFrameEncode(char cmdId,
 #ifdef NSTAR_CRC_ENABLED
     /* CRC over everything written so far: '<' CMD SIZE ':' DATA ':' */
     size_t crcInputLen = (size_t)(p - bufOut);
-    uint16_t crc = nstarCRC16XMODEM(bufOut, crcInputLen);
+    uint16_t crc = nstarCRC16Xmodem(bufOut, crcInputLen);
 
     /* CRC as 4 uppercase ASCII hex chars */
     *p++ = (uint8_t)nibbleToHex((crc >> 12) & 0x0F);
@@ -187,7 +187,7 @@ nstarResult_t nstarFrameEncode(char cmdId,
  *   Input = buf[0 .. sep2Pos] inclusive
  *   sep2Pos = 5 + SIZE  (the Sep2 immediately after DATA)
  */
-nstarResult_t nstarFrameDecode(const uint8_t *buf, size_t len,
+NSTAR_Result_t nstarFrameDecode(const uint8_t *buf, size_t len,
                                    char *cmdIdOut,
                                    uint8_t *dataOut, size_t *dataLenOut)
 {
@@ -246,7 +246,7 @@ nstarResult_t nstarFrameDecode(const uint8_t *buf, size_t len,
     /*
      * CRC input = buf[0 .. sep2Pos] inclusive (includes '<' and Sep2).
      */
-    uint16_t computedCRC = nstarCRC16XMODEM(buf, sep2Pos + 1);
+    uint16_t computedCRC = nstarCRC16Xmodem(buf, sep2Pos + 1);
     if (computedCRC != receivedCRC) return NSTAR_ERR_CRC;
 
 #else /* CRC disabled */

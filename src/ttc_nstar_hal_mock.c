@@ -1,5 +1,5 @@
 /**
- * @file  nstar_hal_mock.c
+ * @file  ttc_nstar_hal_mock.c
  * @brief Mock HAL implementation for unit testing (Stages 1-5).
  *
  * Replaces hal/nstar_hal_linux.c at link time during test builds.
@@ -9,8 +9,8 @@
  * calling the module under test.
  */
 
-#include "nstar.h"
-#include "nstar_hal_mock.h"
+#include "ttc_nstar.h"
+#include "ttc_nstar_hal_mock.h"
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -42,7 +42,7 @@ static size_t  gUARTWrittenLen = 0;
 #define MOCK_GPIO_EVENTS_MAX    64
 static struct {
     int fd;
-    nstarGPIOEdge_t edge;
+    NSTAR_GPIOEdge_t edge;
     uint32_t delayMS;   /* simulated delay before edge fires */
 } gGPIOEvents[MOCK_GPIO_EVENTS_MAX];
 static int  gGPIOEventCount = 0;
@@ -106,7 +106,7 @@ const uint8_t *nstarMockUARTGetWritten(size_t *lenOut)
     return gUARTWritten;
 }
 
-void nstarMockGPIOQueueEdge(int fd, nstarGPIOEdge_t edge,
+void nstarMockGPIOQueueEdge(int fd, NSTAR_GPIOEdge_t edge,
                                  uint32_t delayMS)
 {
     if (gGPIOEventCount >= MOCK_GPIO_EVENTS_MAX) return;
@@ -149,7 +149,7 @@ int nstarMockDataClockIsRunning(void)
  * =========================================================================
  */
 
-ssize_t nstarHALUARTWrite(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarUARTWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd;
     if (gUARTWrittenLen + len <= MOCK_UART_WRITE_BUF_MAX) {
@@ -159,7 +159,7 @@ ssize_t nstarHALUARTWrite(int fd, const uint8_t *buf, size_t len)
     return (ssize_t)len;
 }
 
-ssize_t nstarHALUARTRead(int fd, uint8_t *buf, size_t len,
+ssize_t nstarUARTRead(int fd, uint8_t *buf, size_t len,
                              uint32_t timeoutMs)
 {
     (void)fd;
@@ -176,7 +176,7 @@ ssize_t nstarHALUARTRead(int fd, uint8_t *buf, size_t len,
     return (ssize_t)copy;
 }
 
-nstarResult_t nstarHALGPIOWaitEdge(int fd, nstarGPIOEdge_t edge,
+NSTAR_Result_t nstarGPIOWaitEdge(int fd, NSTAR_GPIOEdge_t edge,
                                          uint32_t timeoutMs)
 {
     (void)timeoutMs;
@@ -199,20 +199,20 @@ nstarResult_t nstarHALGPIOWaitEdge(int fd, nstarGPIOEdge_t edge,
     return NSTAR_ERR_TIMEOUT;
 }
 
-int nstarHALGPIORead(int fd)
+int nstarGPIORead(int fd)
 {
     if (fd < 0 || fd >= 32) return -1;
     return gGPIOValues[fd];
 }
 
-nstarResult_t nstarHALGPIOWrite(int fd, int value)
+NSTAR_Result_t nstarGPIOWrite(int fd, int value)
 {
     if (fd < 0 || fd >= 32) return NSTAR_ERR_HAL;
     gGPIOValues[fd] = value ? 1 : 0;
     return NSTAR_OK;
 }
 
-ssize_t nstarHALDataWrite(int fd, const uint8_t *buf, size_t len)
+ssize_t nstarDataWrite(int fd, const uint8_t *buf, size_t len)
 {
     (void)fd;
     if (gDataWrittenLen + len <= MOCK_DATA_WRITE_MAX) {
@@ -222,7 +222,7 @@ ssize_t nstarHALDataWrite(int fd, const uint8_t *buf, size_t len)
     return (ssize_t)len;
 }
 
-ssize_t nstarHALDataRead(int fd, uint8_t *buf, size_t len)
+ssize_t nstarDataRead(int fd, uint8_t *buf, size_t len)
 {
     (void)fd;
     size_t avail = gDataReadLen - gDataReadPos;
@@ -233,21 +233,21 @@ ssize_t nstarHALDataRead(int fd, uint8_t *buf, size_t len)
     return (ssize_t)copy;
 }
 
-nstarResult_t nstarHALDataClockStart(int fd)
+NSTAR_Result_t nstarDataClockStart(int fd)
 {
     (void)fd;
     gClockRunning = 1;
     return NSTAR_OK;
 }
 
-nstarResult_t nstarHALDataClockStop(int fd)
+NSTAR_Result_t nstarDataClockStop(int fd)
 {
     (void)fd;
     gClockRunning = 0;
     return NSTAR_OK;
 }
 
-void nstarHALSleepMS(uint32_t ms)
+void nstarSleepMS(uint32_t ms)
 {
     /*
      * Tests sleep a scaled-down real duration so the suite stays fast,
@@ -258,8 +258,8 @@ void nstarHALSleepMS(uint32_t ms)
      * Without this scaling, a fixed-duration sleep made every production
      * delay resolve at the same real time, letting the health thread's
      * first poll race a test's own synchronous multi-step UART sequence
-     * (e.g. nstarTXStart()) for the same mocked response queue, even
-     * though nstarRegReadMulti() is not atomic across the uartMutex
+     * (e.g. NSTAR_TXStart()) for the same mocked response queue, even
+     * though NSTAR_RegReadMulti() is not atomic across the uartMutex
      * (it acquires/releases per register, same as production).
      *
      * Scaling by /100 keeps the 30000 ms health interval at 300 ms real
@@ -278,7 +278,7 @@ void nstarHALSleepMS(uint32_t ms)
     nanosleep(&ts, NULL);
 }
 
-uint64_t nstarHALTimestampMS(void)
+uint64_t nstarTimestampMS(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);

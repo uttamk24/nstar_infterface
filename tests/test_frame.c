@@ -13,7 +13,7 @@
  */
 
 #include "unity/unity.h"
-#include "nstar.h"
+#include "ttc_nstar.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -29,7 +29,7 @@ void tearDown(void) {}
 void testCrcIrdVerificationVector(void)
 {
     const uint8_t input[] = "123456789";
-    TEST_ASSERT_EQUAL_HEX16(0x31C3, nstarCRC16XMODEM(input, 9));
+    TEST_ASSERT_EQUAL_HEX16(0x31C3, nstarCRC16Xmodem(input, 9));
 }
 
 /**
@@ -40,7 +40,7 @@ void testCrcIrdVerificationVector(void)
 void testCrcVCommandNoData(void)
 {
     const uint8_t input[] = { '<','V','0','0',':',':' };
-    TEST_ASSERT_EQUAL_HEX16(0x68D3, nstarCRC16XMODEM(input, sizeof(input)));
+    TEST_ASSERT_EQUAL_HEX16(0x68D3, nstarCRC16Xmodem(input, sizeof(input)));
 }
 
 /**
@@ -52,13 +52,13 @@ void testCrcVCommandNoData(void)
 void testCrcReadRegister0x10(void)
 {
     const uint8_t input[] = { '<','R','0','2',':','1','0',':' };
-    TEST_ASSERT_EQUAL_HEX16(0x9EA5, nstarCRC16XMODEM(input, sizeof(input)));
+    TEST_ASSERT_EQUAL_HEX16(0x9EA5, nstarCRC16Xmodem(input, sizeof(input)));
 }
 
 /** CRC over empty input returns initial value 0x0000. */
 void testCrcEmptyInput(void)
 {
-    TEST_ASSERT_EQUAL_HEX16(0x0000, nstarCRC16XMODEM(NULL, 0));
+    TEST_ASSERT_EQUAL_HEX16(0x0000, nstarCRC16Xmodem(NULL, 0));
 }
 
 /** Any single-byte change in input must change the CRC. */
@@ -66,8 +66,8 @@ void testCrcDiffersOnByteChange(void)
 {
     const uint8_t a[] = { '<','R','0','2',':','1','0',':' };
     const uint8_t b[] = { '<','R','0','2',':','1','1',':' };
-    TEST_ASSERT_NOT_EQUAL(nstarCRC16XMODEM(a, sizeof(a)),
-                           nstarCRC16XMODEM(b, sizeof(b)));
+    TEST_ASSERT_NOT_EQUAL(nstarCRC16Xmodem(a, sizeof(a)),
+                           nstarCRC16Xmodem(b, sizeof(b)));
 }
 
 /* =========================================================================
@@ -325,7 +325,7 @@ void testDecodeVResponse6Bytes(void)
     /* 3 bytes {0x01, 0x62, 0xFF}: DATA="0162FF", SIZE="06"
        CRC input = b"<V06:0162FF:"  */
     uint8_t crc_in[] = "<V06:0162FF:";
-    uint16_t crc = nstarCRC16XMODEM(crc_in, sizeof(crc_in)-1);
+    uint16_t crc = nstarCRC16Xmodem(crc_in, sizeof(crc_in)-1);
     /* Build frame dynamically to avoid hardcoding CRC */
     char frame[64];
     snprintf(frame, sizeof(frame), "<V06:0162FF:%04X>", crc);
