@@ -863,11 +863,13 @@ static void *rxThreadFunc(void *arg)
  *   and stops TX.
  *
  * faultThreadFunc():
- *   Blocks on FAULT_N falling edge (active-low fault assertion).
+ *   Blocks on FAULT_N RISING edge (fault onset — open-collector released,
+ *   external pull-up drives line HIGH per User Manual §3.1.1 Figures 9 & 10).
  *   On fault:
  *     1. Stop TX if active.
- *     2. Wait FAULT_N rising edge (N-STAR auto-recovery).
- *     3. If not recovered within timeout: assert RESET_N (GPIO LOW).
+ *     2. Wait FAULT_N FALLING edge (N-STAR auto-recovery, line returns LOW).
+ *        Minimum fault duration guaranteed by hardware = 3 s.
+ *     3. If not recovered within 5 s timeout: assert RESET_N (GPIO LOW 100 ms).
  *     4. Fire onFault(NSTAR_FAULT_SEL) callback.
  *     5. Re-run startup_sequence() to restore register configuration.
  */
@@ -898,7 +900,9 @@ NSTAR_Result_t NSTAR_HealthRead(NSTAR_Ctx_t *ctx, NSTAR_Health_t *out)
     if (rc != NSTAR_OK) return rc;
 
     int faultPin = nstarGPIORead(ctx->config.gpioFaultN);
-    out->faultActive = (faultPin == 0);
+    /* FAULT_N is HIGH when fault is active (open-collector released by N-STAR,
+     * external 100kΩ pull-up raises line).  FAULT_N is LOW in normal operation. */
+    out->faultActive = (faultPin == 1);
     return NSTAR_OK;
 }
 
@@ -942,25 +946,38 @@ static void *healthThreadFunc(void *arg)
 #define FAULT_RECOVERY_TIMEOUT_MS   5000U   /* wait for FAULT_N to clear */
 #define FAULT_RESET_HOLD_MS          100U   /* RESET_N assert duration   */
 
-/* Assert RESET_N low for FAULT_RESET_HOLD_MS, then wait for FAULT_N to clear. */
+/* Assert RESET_N low for FAULT_RESET_HOLD_MS, then wait for FAULT_N to clear.
+ *
+ * After releasing RESET_N, N-STAR performs a cold boot and de-asserts FAULT_N
+ * (line returns LOW — open-collector pulled down).  We wait for FALLING edge.
+ */
 static void faultHandleHardReset(NSTAR_Ctx_t *ctx)
 {
     nstarGPIOWrite(ctx->config.gpioResetN, 0);
     nstarSleepMS(FAULT_RESET_HOLD_MS);
     nstarGPIOWrite(ctx->config.gpioResetN, 1);
+    /* Wait for FAULT_N to return LOW after cold boot */
     nstarGPIOWaitEdge(ctx->config.gpioFaultN,
-                          NSTAR_GPIO_EDGE_RISING,
+                          NSTAR_GPIO_EDGE_FALLING,
                           FAULT_RECOVERY_TIMEOUT_MS);
 }
 
-/* Handle one complete fault event: stop TX, wait for recovery, notify, reinit. */
+/* Handle one complete fault event: stop TX, wait for recovery, notify, reinit.
+ *
+ * FAULT_N polarity (User Manual §3.1.1, Figures 9 & 10):
+ *   FAULT_N goes HIGH when a SEL/fault fires (open-collector released, external
+ *   pull-up raises the line).  It returns LOW when the fault has cleared.
+ *   So after the thread detects the RISING edge (fault start), we wait here for
+ *   the FALLING edge (fault cleared / N-STAR recovered).
+ */
 static void faultHandleEvent(NSTAR_Ctx_t *ctx)
 {
     setModuleState(ctx, NSTAR_MODULE_FAULT);
     if (ctx->txActive) NSTAR_TXStop(ctx);
 
+    /* Wait for FAULT_N to return LOW — N-STAR auto-recovery within 5 s */
     NSTAR_Result_t rc = nstarGPIOWaitEdge(ctx->config.gpioFaultN,
-                                                 NSTAR_GPIO_EDGE_RISING,
+                                                 NSTAR_GPIO_EDGE_FALLING,
                                                  FAULT_RECOVERY_TIMEOUT_MS);
     if (rc != NSTAR_OK) faultHandleHardReset(ctx);
 
@@ -972,8 +989,9 @@ static void *faultThreadFunc(void *arg)
 {
     NSTAR_Ctx_t *ctx = (NSTAR_Ctx_t *)arg;
     while (!ctx->stopFlag) {
+        /* Wait for FAULT_N to go HIGH — fault onset (RISING edge) */
         NSTAR_Result_t rc = nstarGPIOWaitEdge(ctx->config.gpioFaultN,
-                                                      NSTAR_GPIO_EDGE_FALLING,
+                                                      NSTAR_GPIO_EDGE_RISING,
                                                       500);
         if (ctx->stopFlag) break;
         if (rc != NSTAR_OK) continue;

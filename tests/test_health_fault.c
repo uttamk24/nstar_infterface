@@ -168,7 +168,7 @@ void setUp(void)
 {
     nstarMockReset();
     syncInit();
-    nstarMockGPIOSetValue(FD_FN, 1);   /* FAULT_N idle = HIGH */
+    nstarMockGPIOSetValue(FD_FN, 0);   /* FAULT_N idle = LOW (no fault; fault fires HIGH) */
     nstarMockGPIOSetValue(FD_DV, 0);
     NSTAR_Result_t rc = NSTAR_Init(&kCfg, &kCb, &gCtx);
     TEST_ASSERT_EQUAL(NSTAR_OK, rc);
@@ -220,8 +220,10 @@ void testHealthReadDecodesTemperatures(void)
     qr("<R02:04:6551>");  /* BB MSB */
     qr("<R02:B0:1FFD>");  /* BB LSB */
 
-    /* FAULT_N = HIGH (no fault) */
-    nstarMockGPIOSetValue(FD_FN, 1);
+    /* FAULT_N = LOW = normal operation (no fault).
+     * Per User Manual §3.1.1: FAULT_N goes HIGH when fault fires,
+     * LOW in normal operation (open-collector held low by N-STAR). */
+    nstarMockGPIOSetValue(FD_FN, 0);
 
     NSTAR_Health_t h;
     memset(&h, 0, sizeof(h));
@@ -235,14 +237,14 @@ void testHealthReadDecodesTemperatures(void)
 }
 
 /**
- * FAULT_N = LOW (fault asserted) → health.faultActive = true.
+ * FAULT_N = HIGH (fault asserted) → health.faultActive = true.
  */
 void testHealthReadFaultActiveWhenFaultNLow(void)
 {
     qr("<R02:05:5660>"); qr("<R02:A0:46AD>");
     qr("<R02:04:6551>"); qr("<R02:B0:1FFD>");
 
-    nstarMockGPIOSetValue(FD_FN, 0);  /* FAULT_N LOW = fault */
+    nstarMockGPIOSetValue(FD_FN, 1);  /* FAULT_N HIGH = fault active (open-collector released, pull-up raises line) */
 
     NSTAR_Health_t h;
     memset(&h, 0, sizeof(h));
@@ -338,12 +340,12 @@ void testHealthLogicStopsTxOnHighTemp(void)
  */
 
 /**
- * FAULT_N falling edge → fault thread fires onFault(NSTAR_FAULT_SEL)
+ * FAULT_N rising edge → fault thread fires onFault(NSTAR_FAULT_SEL)
  * after FAULT_N recovers.
  *
  * Sequence queued in mock:
- *   FAULT_N falling  (fault asserted)
- *   FAULT_N rising   (N-STAR self-recovered)
+ *   FAULT_N rising   (fault asserted — line goes HIGH)
+ *   FAULT_N falling  (N-STAR self-recovered — line returns LOW)
  *   Startup sequence UART responses (re-init after fault)
  */
 void testFaultThreadFiresFaultCallbackOnRecovery(void)
@@ -352,8 +354,9 @@ void testFaultThreadFiresFaultCallbackOnRecovery(void)
     queueStartupResponses();
 
     /* Queue FAULT_N: falling then rising */
-    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
+    /* FAULT_N RISING = fault fires; FALLING = fault clears (User Manual §3.1.1) */
     nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
 
     /* Wait for onFault callback (up to 2 s) */
     int got = syncWait(2000);
@@ -383,15 +386,16 @@ void testFaultThreadStopsTxBeforeFaultCallback(void)
     /* Reorder responses: tx_stop needs to happen before startup */
     nstarMockReset();
     syncInit();
-    nstarMockGPIOSetValue(FD_FN, 1);
+    nstarMockGPIOSetValue(FD_FN, 0);   /* FAULT_N idle = LOW */
     /* Re-start context with TX already active manually */
     /* Simpler approach: queue tx_stop then startup for fault handler */
     queueTXStop();           /* for NSTAR_TXStop() inside fault handler */
     queueStartupResponses(); /* for NSTAR_StartupSequence() */
 
-    /* Assert FAULT_N falling edge */
-    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
+    /* Assert FAULT_N rising edge (fault fires HIGH) */
+    /* FAULT_N RISING = fault fires; FALLING = fault clears (User Manual §3.1.1) */
     nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_RISING,  0);
+    nstarMockGPIOQueueEdge(FD_FN, NSTAR_GPIO_EDGE_FALLING, 0);
 
     int got = syncWait(2000);
     TEST_ASSERT_TRUE_MESSAGE(got, "onFault callback did not fire after FAULT_N");

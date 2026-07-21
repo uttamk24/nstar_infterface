@@ -360,14 +360,15 @@ void testSilFaultAssertionThenRecovery(void)
         silStatusWaitFor("MODULE_STATE", "READY", 5000),
         "module did not reach READY before fault scenario could start");
 
-    /* Assert FAULT_N (active-low: falling edge = fault) */
-    setGPIO(SIL_GPIO_FAULT_N_FILE, 0);
+    /* Assert FAULT_N HIGH = fault fires (open-collector released, pull-up raises line)
+     * Per User Manual §3.1.1: FAULT_N goes HIGH when SEL detected. */
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 1);
 
     int got = silStatusWaitFor("MODULE_STATE", "FAULT", 3000);
     TEST_ASSERT_TRUE_MESSAGE(got, "moduleState did not reach FAULT");
 
-    /* Release FAULT_N — N-STAR "self-recovers" */
-    setGPIO(SIL_GPIO_FAULT_N_FILE, 1);
+    /* Release FAULT_N LOW — N-STAR self-recovered, line returns to idle LOW */
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 0);
 
     got = silStatusWaitFor("MODULE_STATE", "READY", 5000);
     TEST_ASSERT_TRUE_MESSAGE(got,
@@ -634,11 +635,11 @@ void testSilHealthOvertempDrivesFaultAndStopsTx(void)
  *               RESET_N pulse before recovery completes
  * =========================================================================
  *
- * Asserts FAULT_N and deliberately holds it LOW past
+ * Asserts FAULT_N HIGH and deliberately holds it HIGH past
  * FAULT_RECOVERY_TIMEOUT_MS (5s), forcing faultThreadFunc() down the
  * "N-STAR did not self-recover" branch: it asserts RESET_N low for
  * FAULT_RESET_HOLD_MS (100ms), releases it, then waits a SECOND 5s
- * window for FAULT_N to rise. We release FAULT_N only after that first
+ * window for FAULT_N to fall. We release FAULT_N only after that first
  * window has elapsed, so the only way recovery completes is via the
  * hard-reset branch.
  *
@@ -662,7 +663,7 @@ void testSilFaultNoSelfRecoveryForcesHardwareReset(void)
     struct timespec t0;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
-    setGPIO(SIL_GPIO_FAULT_N_FILE, 0);   /* assert fault */
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 1);   /* assert fault — FAULT_N HIGH */
 
     TEST_ASSERT_TRUE_MESSAGE(
         silStatusWaitFor("MODULE_STATE", "FAULT", 2000),
@@ -677,7 +678,7 @@ void testSilFaultNoSelfRecoveryForcesHardwareReset(void)
     struct timespec hold = { 6, 0 };   /* 6s > 5s timeout, deliberate margin */
     nanosleep(&hold, NULL);
 
-    setGPIO(SIL_GPIO_FAULT_N_FILE, 1);   /* release fault */
+    setGPIO(SIL_GPIO_FAULT_N_FILE, 0);   /* release fault — FAULT_N returns LOW */
 
     int got = silStatusWaitFor("MODULE_STATE", "READY", 8000);
     TEST_ASSERT_TRUE_MESSAGE(got,

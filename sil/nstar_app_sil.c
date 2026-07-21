@@ -339,8 +339,11 @@ static int openUART(const char *slavePath)
  *
  * Ensures every GPIO file exists with a sane idle default before
  * NSTAR_Init() spawns threads that immediately start polling them.
- * FAULT_N idles HIGH (active-low, no fault). LOCK_DETECT and DATA_VALID
- * idle LOW (no signal). RESET_N idles HIGH (not asserted).
+ * FAULT_N idles LOW (no fault). Per User Manual §3.1.1: FAULT_N goes HIGH
+ * when N-STAR detects a SEL or RF power failure (open-collector released,
+ * external 100kΩ pull-up raises the line). Returns LOW when fault clears.
+ * LOCK_DETECT and DATA_VALID idle LOW (no signal).
+ * RESET_N idles HIGH (not asserted).
  */
 
 static void writeGPIODefault(const char *filename, int value)
@@ -359,7 +362,7 @@ static void initGPIODefaults(void)
 {
     writeGPIODefault(SIL_GPIO_LOCK_DETECT_FILE, 0);
     writeGPIODefault(SIL_GPIO_DATA_VALID_FILE,  0);
-    writeGPIODefault(SIL_GPIO_FAULT_N_FILE,      1);
+    writeGPIODefault(SIL_GPIO_FAULT_N_FILE,      0);  /* LOW = no fault */
     writeGPIODefault(SIL_GPIO_RESET_N_FILE,      1);
 }
 
