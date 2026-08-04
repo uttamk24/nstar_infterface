@@ -422,6 +422,149 @@ NSTAR_Result_t NSTAR_RegReadMulti(NSTAR_Ctx_t *ctx, uint8_t startAddr,
  * =========================================================================
  */
 
+/* =========================================================================
+ * BEGIN: Multi-byte latching register helpers
+ * =========================================================================
+ *
+ * These registers span multiple addresses and only take effect when the
+ * FINAL (LSB) address is written. Writes MUST be issued MSB → LSB in
+ * order. Partial writes or wrong order silently have no effect.
+ *
+ * Latching addresses (IRD Annexe B):
+ *   0x13  RX_SENSITIVITY LSB    — triggers wake-up threshold update
+ *   0x27  RX_FREQ_FRAC  LSB    — triggers RX frequency change (CFF only)
+ *   0x43  TX_CONF_FILTER LSB   — triggers TX filter update
+ *   0x65  TX_FREQ_FRAC  LSB    — triggers TX frequency change (CFF only)
+ */
+
+/**
+ * NSTAR_SetRXSensitivity() — Write 23-bit RX wake-up threshold.
+ *
+ * Writes registers 0x11 (MSB) → 0x12 → 0x13 (LSB, latch).
+ * rawValue bits [22:0]; bit 23 must be 0.
+ * Formula (IRD Annex C): T(dBm) = (10*log10(raw) - CAL_B) / CAL_A
+ * Use the V command identity read at startup to obtain CAL_A and CAL_B.
+ */
+NSTAR_Result_t NSTAR_SetRXSensitivity(NSTAR_Ctx_t *ctx, uint32_t rawValue)
+{
+    if (!ctx) return NSTAR_ERR_PARAM;
+    if (rawValue > 0x7FFFFFU) return NSTAR_ERR_PARAM; /* 23-bit max */
+
+    NSTAR_Result_t rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_RX_SENSITIVITY_MSB,
+                        (uint8_t)((rawValue >> 16) & 0x7F));
+    if (rc != NSTAR_OK) return rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_RX_SENSITIVITY_MID,
+                        (uint8_t)((rawValue >> 8) & 0xFF));
+    if (rc != NSTAR_OK) return rc;
+    /* Write LSB last — triggers the latch */
+    return NSTAR_RegWrite(ctx, NSTAR_REG_RX_SENSITIVITY_LSB,
+                          (uint8_t)(rawValue & 0xFF));
+}
+
+/**
+ * NSTAR_SetTXFilter() — Write 9-bit TX convolutional filter config.
+ *
+ * Writes registers 0x42 (MSB, bit 8 only) → 0x43 (bits 7:0, latch).
+ * filterConfig values per IRD Table 14:
+ *   0x000 = no filter
+ *   0x001 = symbol rate < 50 kbps
+ *   0x002 = symbol rate < 75 kbps  ... etc.
+ * Requires FPGA_OPT_CUSTOM_TX or FPGA_OPT_CUSTOM_FIR_TX enabled.
+ */
+NSTAR_Result_t NSTAR_SetTXFilter(NSTAR_Ctx_t *ctx, uint16_t filterConfig)
+{
+    if (!ctx) return NSTAR_ERR_PARAM;
+    if (filterConfig > 0x1FFU) return NSTAR_ERR_PARAM; /* 9-bit max */
+
+    NSTAR_Result_t rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_TX_CONF_FILTER_MSB,
+                        (uint8_t)((filterConfig >> 8) & 0x01));
+    if (rc != NSTAR_OK) return rc;
+    /* Write LSB last — triggers the latch */
+    return NSTAR_RegWrite(ctx, NSTAR_REG_TX_CONF_FILTER_LSB,
+                          (uint8_t)(filterConfig & 0xFF));
+}
+
+/**
+ * NSTAR_SetRXFrequency() — Write RX carrier frequency (CFF option only).
+ *
+ * Writes registers 0x25 (INT) → 0x26 (FRAC high nibble) → 0x27 (FRAC
+ * low byte, latch). Only valid if FPGA_OPT_CFF is set in FPGA_OPTION.
+ *
+ * Computing freqInt and freqFrac (IRD Annex C):
+ *   target_pll = rxFreqMHz + 0.4     (N-STAR expects +400 kHz offset)
+ *   freqInt    = floor(target_pll / 10)
+ *   freqFrac   = round((target_pll/10 - freqInt) * 4000)
+ */
+NSTAR_Result_t NSTAR_SetRXFrequency(NSTAR_Ctx_t *ctx,
+                                     uint8_t  freqInt,
+                                     uint16_t freqFrac)
+{
+    if (!ctx) return NSTAR_ERR_PARAM;
+    if (freqFrac > 0xFFFU) return NSTAR_ERR_PARAM; /* 12-bit max */
+
+    NSTAR_Result_t rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_RX_FREQ_INT,  freqInt);
+    if (rc != NSTAR_OK) return rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_RX_FREQ_FRAC_MSB,
+                        (uint8_t)((freqFrac >> 8) & 0x0F));
+    if (rc != NSTAR_OK) return rc;
+    /* Write LSB last — triggers the frequency change */
+    return NSTAR_RegWrite(ctx, NSTAR_REG_RX_FREQ_FRAC_LSB,
+                          (uint8_t)(freqFrac & 0xFF));
+}
+
+/**
+ * NSTAR_SetTXFrequency() — Write TX carrier frequency (CFF option only).
+ *
+ * Writes registers 0x60 (SEL) → 0x61 (INT high) → 0x62 (INT low) →
+ * 0x63 (FRAC[22:16]) → 0x64 (FRAC[15:8]) → 0x65 (FRAC[7:0], latch).
+ * TX frequency cannot be changed while transmitter is ON; change takes
+ * effect at next TX OFF/ON cycle (IRD §TX_FREQ_INT note).
+ *
+ * Computing freqSel, freqInt, freqFrac (IRD Annex C):
+ *   Select freqSel from FREQUENCY_RANGE table for the target band.
+ *   x = 2^(FREQSEL[2:0] - 3)
+ *   freqInt  = floor(x * txFreqMHz / 40)
+ *   freqFrac = round(2^23 * (x * txFreqMHz / 40 - freqInt))
+ */
+NSTAR_Result_t NSTAR_SetTXFrequency(NSTAR_Ctx_t *ctx,
+                                     uint8_t  freqSel,
+                                     uint16_t freqInt,
+                                     uint32_t freqFrac)
+{
+    if (!ctx) return NSTAR_ERR_PARAM;
+    if (freqSel  > 0x3FU)      return NSTAR_ERR_PARAM; /* 6-bit max */
+    if (freqInt  > 0x1FFU)     return NSTAR_ERR_PARAM; /* 9-bit max */
+    if (freqFrac > 0x7FFFFFU)  return NSTAR_ERR_PARAM; /* 23-bit max */
+
+    NSTAR_Result_t rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_TX_FREQ_SEL,
+                        freqSel);
+    if (rc != NSTAR_OK) return rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_TX_FREQ_INT_MSB,
+                        (uint8_t)((freqInt >> 8) & 0x01));
+    if (rc != NSTAR_OK) return rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_TX_FREQ_INT_LSB,
+                        (uint8_t)(freqInt & 0xFF));
+    if (rc != NSTAR_OK) return rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_TX_FREQ_FRAC_MSB,
+                        (uint8_t)((freqFrac >> 16) & 0x7F));
+    if (rc != NSTAR_OK) return rc;
+    rc = NSTAR_RegWrite(ctx, NSTAR_REG_TX_FREQ_FRAC_MID,
+                        (uint8_t)((freqFrac >> 8) & 0xFF));
+    if (rc != NSTAR_OK) return rc;
+    /* Write LSB last — triggers the frequency change */
+    return NSTAR_RegWrite(ctx, NSTAR_REG_TX_FREQ_FRAC_LSB,
+                          (uint8_t)(freqFrac & 0xFF));
+}
+
+/* =========================================================================
+ * END: Multi-byte latching register helpers
+ * =========================================================================
+ */
+
 NSTAR_Result_t NSTAR_CMDReadIdentity(NSTAR_Ctx_t *ctx,
                                         NSTAR_Identity_t *out)
 {

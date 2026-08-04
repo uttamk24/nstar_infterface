@@ -123,9 +123,9 @@ add_executable(nstar_sim sil/nstar_sim.c)
 target_include_directories(nstar_sim PRIVATE ${NSTAR_INC} ${NSTAR_SIL})
 target_link_libraries(nstar_sim PRIVATE ttc_nstar_frame_crc_on util)
 
-add_executable(ttc_nstar_app_sil sil/nstar_app_sil.c)
-target_include_directories(ttc_nstar_app_sil PRIVATE ${NSTAR_INC} ${NSTAR_SIL})
-target_link_libraries(ttc_nstar_app_sil PRIVATE
+add_executable(nstar_app_sil sil/nstar_app_sil.c)
+target_include_directories(nstar_app_sil PRIVATE ${NSTAR_INC} ${NSTAR_SIL})
+target_link_libraries(nstar_app_sil PRIVATE
     ttc_nstar_core ttc_nstar_frame_crc_on ttc_nstar_hal_dummy pthread m)
 
 add_executable(test_sil sil/test_sil.c)
@@ -143,4 +143,4 @@ add_test(NAME stage3_tx            COMMAND test_tx)
 add_test(NAME stage4_rx            COMMAND test_rx)
 add_test(NAME stage5_health_fault  COMMAND test_health_fault)
 add_test(NAME sil_full_suite       COMMAND test_sil
-         $<TARGET_FILE:nstar_sim> $<TARGET_FILE:ttc_nstar_app_sil>)
+         $<TARGET_FILE:nstar_sim> $<TARGET_FILE:nstar_app_sil>)

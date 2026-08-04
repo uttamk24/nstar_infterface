@@ -125,10 +125,14 @@ extern "C" {
 #define NSTAR_REG_RX_STATUS             0x10U  /* read:  RX state        */
 #define NSTAR_REG_RX_SENSITIVITY_MSB    0x11U
 #define NSTAR_REG_RX_SENSITIVITY_MID    0x12U
-#define NSTAR_REG_RX_SENSITIVITY_LSB    0x13U
+#define NSTAR_REG_RX_SENSITIVITY_LSB    0x13U  /* LATCH — write last */
 #define NSTAR_REG_RX_FREQ_SHIFT_MSB     0x14U
 #define NSTAR_REG_RX_FREQ_SHIFT_MID     0x15U
 #define NSTAR_REG_RX_FREQ_SHIFT_LSB     0x16U
+/* CFF option — RX frequency change (requires FPGA_OPT_CFF) */
+#define NSTAR_REG_RX_FREQ_INT           0x25U
+#define NSTAR_REG_RX_FREQ_FRAC_MSB      0x26U
+#define NSTAR_REG_RX_FREQ_FRAC_LSB      0x27U  /* LATCH — write last */
 #define NSTAR_REG_RX_IQ_POWER_MSB       0x17U
 #define NSTAR_REG_RX_IQ_POWER_LSB       0x18U
 #define NSTAR_REG_RX_AGC_MSB            0x19U
@@ -143,7 +147,14 @@ extern "C" {
 #define NSTAR_REG_TX_MODE               0x40U
 #define NSTAR_REG_TX_CONV_DIFF          0x41U
 #define NSTAR_REG_TX_CONF_FILTER_MSB    0x42U
-#define NSTAR_REG_TX_CONF_FILTER_LSB    0x43U
+#define NSTAR_REG_TX_CONF_FILTER_LSB    0x43U  /* LATCH — write last */
+/* CFF option — TX frequency change (requires FPGA_OPT_CFF) */
+#define NSTAR_REG_TX_FREQ_SEL           0x60U
+#define NSTAR_REG_TX_FREQ_INT_MSB       0x61U
+#define NSTAR_REG_TX_FREQ_INT_LSB       0x62U
+#define NSTAR_REG_TX_FREQ_FRAC_MSB      0x63U
+#define NSTAR_REG_TX_FREQ_FRAC_MID      0x64U
+#define NSTAR_REG_TX_FREQ_FRAC_LSB      0x65U  /* LATCH — write last */
 #define NSTAR_REG_TX_WAVEFORM           0x44U
 #define NSTAR_REG_TX_PCM_INDEX          0x45U
 #define NSTAR_REG_TX_AGC_MSB            0x46U
@@ -450,6 +461,22 @@ NSTAR_Result_t NSTAR_RegReadMulti(NSTAR_Ctx_t *ctx, uint8_t startAddr,
  * PUBLIC API — NAMED COMMANDS  (src/nstar_core.c)
  * =========================================================================
  */
+
+/* ── Multi-byte latching register helpers ──────────────────────────────────
+ * These functions perform the mandatory MSB→LSB write sequence and trigger
+ * the internal latch on the final write. Never use NSTAR_RegWrite() for
+ * these registers individually — partial writes silently have no effect.
+ *
+ * Latch addresses: 0x13 (RX_SENSITIVITY), 0x27 (RX_FREQ_FRAC),
+ *                  0x43 (TX_CONF_FILTER),  0x65 (TX_FREQ_FRAC)
+ */
+NSTAR_Result_t NSTAR_SetRXSensitivity(NSTAR_Ctx_t *ctx, uint32_t rawValue);
+NSTAR_Result_t NSTAR_SetTXFilter(NSTAR_Ctx_t *ctx, uint16_t filterConfig);
+NSTAR_Result_t NSTAR_SetRXFrequency(NSTAR_Ctx_t *ctx,
+                                     uint8_t freqInt, uint16_t freqFrac);
+NSTAR_Result_t NSTAR_SetTXFrequency(NSTAR_Ctx_t *ctx,
+                                     uint8_t freqSel, uint16_t freqInt,
+                                     uint32_t freqFrac);
 
 NSTAR_Result_t NSTAR_CMDReadIdentity(NSTAR_Ctx_t *ctx,
                                         NSTAR_Identity_t *out);
